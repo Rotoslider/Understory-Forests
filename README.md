@@ -28,7 +28,7 @@ UPDATE 24/11/21: If you do not have an Nvidia GPU, the existing requirements.txt
 You will likely get this error when you try to run it:
 "RuntimeError: Attempting to deserialize object on a CUDA device but torch.cuda.is_available is False..."
 You will need to reinstall pytorch with the CPU version and reinstall pytorch geometric after that. I will create a second
-requirements.txt file for CPU installation within the next week.
+requirements.txt file for CPU installation within the next week. 
 
 ## How to use
 
