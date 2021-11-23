@@ -81,7 +81,7 @@ class PostProcessing:
                     grid_points = np.vstack((grid_points, np.array([[x, y, z]])))
 
         if self.parameters['plot_radius'] > 0:
-            plot_centre = [[float(self.plot_summary['Plot Centre Northing']), float(self.plot_summary['Plot Centre Easting'])]]
+            plot_centre = [[float(self.plot_summary['Plot Centre X']), float(self.plot_summary['Plot Centre Y'])]]
             crop_radius = self.parameters['plot_radius'] + self.parameters['plot_radius_buffer']
             grid_points = grid_points[np.linalg.norm(grid_points[:, :2] - plot_centre, axis=1) <= crop_radius]
 
