@@ -66,7 +66,7 @@ class SemanticSegmentation:
     def __init__(self, parameters):
         self.sem_seg_start_time = time.time()
         self.parameters = parameters
-        self.device = 'cpu' #torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         print('Is CUDA available?', torch.cuda.is_available())
         print("Performing inference on device:", self.device)
         if not torch.cuda.is_available():
