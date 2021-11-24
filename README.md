@@ -21,14 +21,27 @@ This may be improved in future versions, as it should be easily fixed with addit
 
 You will need to install all packages in the requirements.txt file. 
 
-If using Anaconda, create a clean environment and activate it. In Anaconda Prompt, type
-"pip install -r requirements.txt" and it should hopefully install all required packages for you.
+If using Anaconda, create a clean environment and activate it. 
+In Anaconda Prompt, type the following (replacing the path to FSCT and your desired environment name as needed):
+
+    cd PATH_TO_FSCT-MAIN_DIRECTORY
+    conda create --name YOUR_ENVIRONMENT_NAME_HERE
+    conda activate YOUR_ENVIRONMENT_NAME_HERE
+    conda install pip
+    pip install -r requirements.txt
+
+This should hopefully install all required packages for you.
+These are the instructions for Windows 10 and Linux.
+I have not tested this on Mac as I don't have one, so I don't know if it will work on them. If someone with a Mac tests this and 
+it works (or doesn't), please let me know!
+
+If you have any difficulties or find any bugs, please get in touch and I will try to help you get it going.
 
 UPDATE 24/11/21: If you do not have an Nvidia GPU, the existing requirements.txt is going to be unsuitable.
 You will likely get this error when you try to run it:
 "RuntimeError: Attempting to deserialize object on a CUDA device but torch.cuda.is_available is False..."
-You will need to reinstall pytorch with the CPU version and reinstall pytorch geometric after that. I will create a second
-requirements.txt file for CPU installation within the next week. 
+You will need to reinstall pytorch with the CPU version and reinstall pytorch geometric after that. 
+**I will try to create a second requirements.txt file for CPU installation within the next week.**
 
 ## How to use
 
