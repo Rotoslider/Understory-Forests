@@ -64,7 +64,15 @@ Future versions may make this a bit nicer/add data tables/etc.
 **tree_data.csv**
 Basic measurements of the trees.
 * Headings are as follows (all units are in metres or cubic metres for volume)
-[x_tree_base, y_tree_base, z_tree_base, DBH, Height, Volume_1, Volume_2, Crown_mean_x, Crown_mean_y, Crown_top_x, Crown_top_y, Crown_top_z, mean_understory_height_in_5m_radius]
+[x_tree_base, y_tree_base, z_tree_base, DBH, CCI_at_BH, Height, Volume_1, Volume_2, Crown_mean_x, Crown_mean_y, Crown_top_x, Crown_top_y, Crown_top_z, mean_understory_height_in_5m_radius]
+* CCI_at_BH stands for Circumferential Completeness Index at Breast Height. CCI is simply the fraction of a circle with
+point coverage in a stem slice as illustrated below. This provides an indication of how complete your stem coverage is.
+In a single scan TLS point cloud, you cannot get a CCI greater than 0.5 (assuming the cylinder fitting was not erroneous), as only one side of the tree is mapped.
+If you have completely scanned the tree (at the measurement location), you should get a CCI of 1.0 (the highest possible CCI).
+![CCI.jpg](readme_images/CCI.jpg)
+The figure is from this paper: https://doi.org/10.3390/rs12101652 if you would like a more detailed explanation of the idea.
+
+
 * Volume_1 is the sum of the volume of the fitted cylinders. 
 * Volume_2 is the volume of a cone (with a base diameter equal to the DBH and height from 1.3 m up to the tree height) + 
 the volume of a cylinder (with a diameter of DBH and 1.3 m tall). This avoids the possibility of a short and shallow 
