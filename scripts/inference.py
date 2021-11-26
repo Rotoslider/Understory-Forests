@@ -15,7 +15,7 @@ from tools import load_file, save_file
 import shutil
 import sys
 sys.setrecursionlimit(10 ** 8)  # Can be necessary for dealing with large point clouds.
-
+ONLY_CPU = True
 
 class TestingDataset(Dataset, ABC):
     def __init__(self, root_dir, points_per_box, device):
@@ -91,7 +91,10 @@ class SemanticSegmentation:
                                  num_workers=0)
 
         model = Net(num_classes=4).to(self.device)
-        model.load_state_dict(torch.load('../model/' + self.parameters['model_filename']), strict=False)
+        if ONLY_CPU:
+            model.load_state_dict(torch.load('../model/' + self.parameters['model_filename'], map_location=torch.device('cpu')), strict=False)
+        else:
+            model.load_state_dict(torch.load('../model/' + self.parameters['model_filename']), strict=False)
         model.eval()
         num_boxes = test_dataset.__len__()
         with torch.no_grad():

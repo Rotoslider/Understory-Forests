@@ -24,11 +24,13 @@ You will need to install all packages in the requirements.txt file.
 If using Anaconda, create a clean environment and activate it. 
 In Anaconda Prompt, type the following (replacing the path to FSCT and your desired environment name as needed):
 
-    cd PATH_TO_FSCT-MAIN_DIRECTORY
-    conda create --name YOUR_ENVIRONMENT_NAME_HERE
-    conda activate YOUR_ENVIRONMENT_NAME_HERE
-    conda install pip
-    pip install -r requirements.txt
+```shell
+cd PATH_TO_FSCT-MAIN_DIRECTORY
+conda create --name YOUR_ENVIRONMENT_NAME_HERE
+conda activate YOUR_ENVIRONMENT_NAME_HERE
+conda install pip
+pip install -r requirements.txt
+```
 
 This should hopefully install all required packages for you.
 These are the instructions for Windows 10 and Linux.
@@ -37,11 +39,17 @@ it works (or doesn't), please let me know!
 
 If you have any difficulties or find any bugs, please get in touch and I will try to help you get it going.
 
-UPDATE 24/11/21: If you do not have an Nvidia GPU, the existing requirements.txt is going to be unsuitable.
+~~UPDATE 24/11/21: If you do not have an Nvidia GPU, the existing requirements.txt is going to be unsuitable.
 You will likely get this error when you try to run it:
 "RuntimeError: Attempting to deserialize object on a CUDA device but torch.cuda.is_available is False..."
 You will need to reinstall pytorch with the CPU version and reinstall pytorch geometric after that. 
-**I will try to create a second requirements.txt file for CPU installation within the next week.**
+**I will try to create a second requirements.txt file for CPU installation within the next week.**~~
+
+UPDATE 26/11/21: If you do not have an Nvidia GPU, the existing requirements.txt is going to be unsuitable.
+You will likely get this error when you try to run it:
+"RuntimeError: Attempting to deserialize object on a CUDA device but torch.cuda.is_available is False..."
+
+You can just open the file ```./scripts/inference.py``` and change the global variable **ONLY_CPU** to **True**.
 
 ## How to use
 
