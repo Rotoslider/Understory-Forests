@@ -67,10 +67,9 @@ class MeasureTree:
 
         self.veg_dict = dict(x=0, y=1, z=2, red=3, green=4, blue=5, label=6, height_above_dtm=7, tree_id=8)
         self.stem_dict = dict(x=0, y=1, z=2, red=3, green=4, blue=5, label=6, height_above_dtm=7, tree_id=8)
-        self.tree_data_dict = dict(PlotId=0, TreeId=1, x_tree_base=2, y_tree_base=3, z_tree_base=4, DBH=5, Height=6,
-                                   Volume_1=7, Volume_2=8, Crown_mean_x=9, Crown_mean_y=10, Crown_top_x=11, Crown_top_y=12,
-                                   Crown_top_z=13,
-                                   mean_understory_height_in_5m_radius=14)
+        self.tree_data_dict = dict(PlotId=0, TreeId=1, x_tree_base=2, y_tree_base=3, z_tree_base=4, DBH=5, CCI_at_BH=6, Height=7,
+                                   Volume_1=8, Volume_2=9, Crown_mean_x=10, Crown_mean_y=11, Crown_top_x=12, Crown_top_y=13,
+                                   Crown_top_z=14, mean_understory_height_in_5m_radius=15)
 
         self.terrain_points, headers_of_interest = load_file(self.output_dir + 'terrain_points.las',
                                                              headers_of_interest=['x', 'y', 'z', 'red', 'green', 'blue',
@@ -865,7 +864,7 @@ class MeasureTree:
 
 
         save_file(self.output_dir + 'interpolated_full_cyl_array.las', interpolated_full_cyl_array, headers_of_interest=list(self.cyl_dict))
-        interpolated_full_cyl_array, _ = load_file(self.output_dir + 'interpolated_full_cyl_array.las', headers_of_interest=list(self.cyl_dict))
+        # interpolated_full_cyl_array, _ = load_file(self.output_dir + 'interpolated_full_cyl_array.las', headers_of_interest=list(self.cyl_dict))
         print(interpolated_full_cyl_array.shape)
         if 0:
             print("Making interp_cyl visualisation...")
@@ -886,7 +885,7 @@ class MeasureTree:
             save_file(self.output_dir + 'interpolated_cyl_vis.las', interpolated_cyl_vis,
                       headers_of_interest=list(self.cyl_dict))
 
-        tree_data = np.zeros((0, 15))
+        tree_data = np.zeros((0, 16))
         radial_tree_aware_plot_cropping = False
         square_tree_aware_plot_cropping = False
         plot_centre = [[float(self.plot_summary['Plot Centre X']), float(self.plot_summary['Plot Centre Y'])]]
@@ -939,25 +938,6 @@ class MeasureTree:
             save_file(self.output_dir + 'cleaned_cyls.las', cleaned_cyls,
                       headers_of_interest=list(self.cyl_dict))
 
-            if 1:
-                print("Making cleaned cylinder visualisation DELETE...")
-                j = 0
-                cleaned_cyl_vis = []
-                max_j = np.shape(cleaned_cyls)[0]
-                with get_context("spawn").Pool(processes=self.num_procs) as pool:
-                    for i in pool.imap_unordered(self.make_cyl_visualisation, cleaned_cyls):
-                        cleaned_cyl_vis.append(i)
-                        if j % 100 == 0:
-                            print('\r', j, '/', max_j, end='')
-                        j += 1
-                cleaned_cyl_vis = np.vstack(cleaned_cyl_vis)
-                print('\r', max_j, '/', max_j, end='')
-                print('\nDone\n')
-
-                print("\nSaving cylinder visualisation...")
-                save_file(self.output_dir + 'cleaned_cyl_vis.las', cleaned_cyl_vis,
-                          headers_of_interest=list(self.cyl_dict))
-
             cleaned_cylinders = np.zeros((0, cleaned_cyls.shape[1]))
 
             print("Sorting vegetation...")
@@ -969,13 +949,12 @@ class MeasureTree:
             results = results[1][mask]
             self.vegetation_points[:, self.veg_dict['tree_id']] = cleaned_cyls[results, self.cyl_dict['tree_id']]
 
-            if self.parameters['sort_stems'] or self.parameters['generate_output_point_cloud']:
-                kdtree = spatial.cKDTree(cleaned_cyls[:, :2], leafsize=1000)
-                results = kdtree.query(self.stem_points[:, :2], k=1)
-                mask = results[0] <= self.parameters['veg_sorting_range']
-                self.stem_points = self.stem_points[mask]
-                results = results[1][mask]
-                self.stem_points[:, self.stem_dict['tree_id']] = cleaned_cyls[results, self.cyl_dict['tree_id']]
+            kdtree = spatial.cKDTree(cleaned_cyls[:, :2], leafsize=1000)
+            results = kdtree.query(self.stem_points[:, :2], k=1)
+            mask = results[0] <= self.parameters['veg_sorting_range']
+            self.stem_points = self.stem_points[mask]
+            results = results[1][mask]
+            self.stem_points[:, self.stem_dict['tree_id']] = cleaned_cyls[results, self.cyl_dict['tree_id']]
 
             for tree_id in np.unique(cleaned_cyls[:, self.cyl_dict['tree_id']]):
                 tree = cleaned_cyls[cleaned_cyls[:, self.cyl_dict['tree_id']] == tree_id]
@@ -997,19 +976,26 @@ class MeasureTree:
                 if self.parameters['sort_stems'] or self.parameters['generate_output_point_cloud']:
                     tree_points = self.stem_points[self.stem_points[:, self.stem_dict['tree_id']] == tree_id]
 
-                DBH_slice = tree[np.logical_and(tree[:, self.cyl_dict['height_above_dtm']] >= 1.0,
-                                                tree[:, self.cyl_dict['height_above_dtm']] <= 1.6)]
+                DBH_cyls_slice = tree[np.logical_and(tree[:, self.cyl_dict['height_above_dtm']] >= 1.0,
+                                                     tree[:, self.cyl_dict['height_above_dtm']] <= 1.6)]
+
+                DBH_points_slice = self.stem_points[np.logical_and(self.stem_points[:, self.stem_dict['height_above_dtm']] >= 1.2,
+                                                                   self.stem_points[:, self.stem_dict['height_above_dtm']] <= 1.4)]
+
                 DBH = 0
+                CCI_at_BH = 0
                 DBH_X = 0
                 DBH_Y = 0
                 DBH_Z = 0
-                if DBH_slice.shape[0] > 0:
-                    DBH = np.around(np.mean(DBH_slice[:, self.cyl_dict['radius']]) * 2, 3)
-                    DBH_X, DBH_Y = np.mean(DBH_slice[:, :2], axis=0)
+
+                if DBH_cyls_slice.shape[0] > 0:
+                    DBH = np.around(np.mean(DBH_cyls_slice[:, self.cyl_dict['radius']]) * 2, 3)
+                    DBH_X, DBH_Y = np.mean(DBH_cyls_slice[:, :2], axis=0)
                     DBH_Z = z_tree_base + 1.3
-                    CCI_at_BH = self.circumferential_completeness_index([DBH_X, DBH_Y], DBH, DBH_slice[:, :2])
+                    CCI_at_BH = self.circumferential_completeness_index([DBH_X, DBH_Y], DBH/2, DBH_points_slice[:, :2])
+
                 volume_1 = tree[0, self.cyl_dict['tree_volume']]
-                volume_2 = np.pi * ((DBH/2) ** 2) * (((tree_height - 1.3)/3) + 1.3)  # Volume of cone from DBH to treetop + volume of cylinder from DBH to ground.
+                volume_2 = np.pi * ((DBH/2) ** 2) * (((tree_height - 1.3)/3) + 1.3)  # Volume of a simple vertical cone from DBH to treetop + volume of cylinder from DBH to ground.
 
                 x_tree_base = tree[np.argmin(tree[:, 2]), 0]
                 y_tree_base = tree[np.argmin(tree[:, 2]), 1]
@@ -1031,13 +1017,14 @@ class MeasureTree:
                             mean_understory_height_in_5m_radius) + ' m'
 
                     print(description)
-                    this_trees_data = np.zeros((1, 15), dtype='object')
+                    this_trees_data = np.zeros((1, 16), dtype='object')
                     this_trees_data[:, self.tree_data_dict['PlotId']] = self.plot_summary['PlotId']
                     this_trees_data[:, self.tree_data_dict['TreeId']] = int(tree_id)
                     this_trees_data[:, self.tree_data_dict['x_tree_base']] = x_tree_base
                     this_trees_data[:, self.tree_data_dict['y_tree_base']] = y_tree_base
                     this_trees_data[:, self.tree_data_dict['z_tree_base']] = z_tree_base
                     this_trees_data[:, self.tree_data_dict['DBH']] = DBH
+                    this_trees_data[:, self.tree_data_dict['CCI_at_BH']] = CCI_at_BH
                     this_trees_data[:, self.tree_data_dict['Height']] = tree_height
                     this_trees_data[:, self.tree_data_dict['Volume_1']] = volume_1
                     this_trees_data[:, self.tree_data_dict['Volume_2']] = volume_2
