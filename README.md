@@ -34,22 +34,13 @@ pip install -r requirements.txt
 
 This should hopefully install all required packages for you.
 These are the instructions for Windows 10 and Linux.
-I have not tested this on Mac as I don't have one, so I don't know if it will work on them. If someone with a Mac tests this and 
+I have not tested this on Mac. If someone with a Mac tests this and 
 it works (or doesn't), please let me know!
 
-If you have any difficulties or find any bugs, please get in touch and I will try to help you get it going.
+If you have any difficulties or find any bugs, please get in touch and I will try to help you get it going. 
+Suggestions for improvements are greatly appreciated.
 
-~~UPDATE 24/11/21: If you do not have an Nvidia GPU, the existing requirements.txt is going to be unsuitable.
-You will likely get this error when you try to run it:
-"RuntimeError: Attempting to deserialize object on a CUDA device but torch.cuda.is_available is False..."
-You will need to reinstall pytorch with the CPU version and reinstall pytorch geometric after that. 
-**I will try to create a second requirements.txt file for CPU installation within the next week.**~~
-
-UPDATE 26/11/21: If you do not have an Nvidia GPU, the existing requirements.txt is going to be unsuitable.
-You will likely get this error when you try to run it:
-"RuntimeError: Attempting to deserialize object on a CUDA device but torch.cuda.is_available is False..."
-
-You can just open the file ```./scripts/inference.py``` and change the global variable **ONLY_CPU** to **True**.
+If you do not have an Nvidia GPU, please set the ```use_CPU_only``` in ```run.py``` setting to True.
 
 ## How to use
 
