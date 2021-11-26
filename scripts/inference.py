@@ -15,7 +15,7 @@ from tools import load_file, save_file
 import shutil
 import sys
 sys.setrecursionlimit(10 ** 8)  # Can be necessary for dealing with large point clouds.
-ONLY_CPU = True
+
 
 class TestingDataset(Dataset, ABC):
     def __init__(self, root_dir, points_per_box, device):
@@ -66,8 +66,12 @@ class SemanticSegmentation:
     def __init__(self, parameters):
         self.sem_seg_start_time = time.time()
         self.parameters = parameters
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        print('Is CUDA available?', torch.cuda.is_available())
+        if not self.parameters['use_CPU_only']:
+            print('Is CUDA available?', torch.cuda.is_available())
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        else:
+            self.device = torch.device('cpu')
+
         print("Performing inference on device:", self.device)
         if not torch.cuda.is_available():
             print("Please be aware that inference will be much slower on CPU. An Nvidia GPU is highly recommended.")
@@ -91,7 +95,7 @@ class SemanticSegmentation:
                                  num_workers=0)
 
         model = Net(num_classes=4).to(self.device)
-        if ONLY_CPU:
+        if self.parameters['use_CPU_only']:
             model.load_state_dict(torch.load('../model/' + self.parameters['model_filename'], map_location=torch.device('cpu')), strict=False)
         else:
             model.load_state_dict(torch.load('../model/' + self.parameters['model_filename']), strict=False)

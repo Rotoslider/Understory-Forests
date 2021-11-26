@@ -29,6 +29,7 @@ if __name__ == '__main__':
                           # Set these appropriately for your hardware.
                           batch_size=18,  # If you get CUDA errors, try lowering this. This is suitable for 24 GB of vRAM.
                           num_procs=18,  # Number of CPU cores you want to use. If you run out of RAM, lower this.
+                          use_CPU_only=False,  # Set to True if you do not have an Nvidia GPU, or if you don't have enough vRAM.
 
                           # Optional settings - Generally leave as they are.
                           slice_thickness=0.15,  # If your point cloud resolution is a bit low (and only if the stem segmentation is still reasonably accurate), try increasing this to 0.2.

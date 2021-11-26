@@ -19,6 +19,7 @@ if __name__ == '__main__':
                           plot_radius_buffer=0,
                           batch_size=18,
                           num_procs=18,
+                          use_CPU_only=False,
                           slice_thickness=0.15,
                           slice_increment=0.05,
                           sort_stems=1,
