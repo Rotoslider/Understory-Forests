@@ -40,7 +40,7 @@ it works (or doesn't), please let me know!
 If you have any difficulties or find any bugs, please get in touch and I will try to help you get it going. 
 Suggestions for improvements are greatly appreciated.
 
-If you do not have an Nvidia GPU, please set the ```use_CPU_only``` in ```run.py``` setting to True.
+If you do not have an Nvidia GPU, please set the ```use_CPU_only``` setting in ```run.py``` to True.
 
 ## How to use
 
