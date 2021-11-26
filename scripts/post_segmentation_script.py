@@ -98,7 +98,7 @@ class PostProcessing:
         save_file(self.output_dir + 'DTM.las', self.DTM)
 
         self.convexhull = spatial.ConvexHull(self.DTM[:, :2])
-        self.convex_hull_points = self.terrain_points[self.convexhull.vertices, :2]
+        #self.convex_hull_points = self.terrain_points[self.convexhull.vertices, :2]
         self.plot_area = self.convexhull.volume/10000  # volume is area in 2d.
         print("Plot area is approximately", self.plot_area, 'ha')
 
