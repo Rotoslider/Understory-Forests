@@ -206,6 +206,18 @@ If you don't need the sorted stem points, turning this off speeds things up. Veg
 #### stem_sorting_range
 Stem points can be, at most, this far away from a cylinder in 3D to be matched to a particular tree.
 
+#### taper_measurement_height_min
+The starting height for the output taper measurements.
+
+#### taper_measurement_height_max
+Taper measurements are extracted up to this height above the DTM.
+
+#### taper_measurement_height_increment
+The increment of the taper measurements.
+
+#### taper_slice_thickness
+The cleaned cylinders (in the point based representation) within +/- 0.5 * taper_slice_thickness are found. The largest radius within this slice is used as the diameter for that particular height. 
+
 #### delete_working_directory
 Generally leave this on. Deletes the files used for segmentation after segmentation is finished.
 You may wish to turn it off if you want to re-run/modify the segmentation code so you don't need to run pre-processing every time.
@@ -244,7 +256,7 @@ segmented point cloud up. Creates the class specific point clouds (terrain, vege
 
 ## Known Limitations
 * Young trees with a lot of branching do not currently get segmented correctly.
-* Some large trees do not currently get measured properly as the rules don't always hold.
+* Some extremely large trees do not currently get measured properly as the rules don't always hold.
 * FSCT is unlikely to output useful results on low resolution point clouds. 
 * *Very high* resolution Aerial LiDAR is about the lowest it can currently cope with. If your dataset is on the borderline,
 try setting low_resolution_point_cloud_hack_mode (in other_parameters.py) to 4 or 5 and rerunning. It's an ugly hack, but it can help sometimes.
@@ -256,9 +268,19 @@ try setting low_resolution_point_cloud_hack_mode (in other_parameters.py) to 4 o
 #### If you wish to cite this work, please use the below citation. If citing for something other than a scientific journal, feel free to link to the GitHub instead.
 Krisanski, S.; Taskhiri, M.S.; Gonzalez Aracil, S.; Herries, D.; Muneri, A.; Gurung, M.B.; Montgomery, J.; Turner, P. Forest Structural Complexity Tool—An Open Source, Fully-Automated Tool for Measuring Forest Point Clouds. Remote Sens. 2021, 13, 4677. https://doi.org/10.3390/rs13224677
 
+## Use of this code
+Please feel free to use/modify/share this code. If you can improve/evaluate the code somehow and wish to make a paper of it, please do!
+I might not have a chance to make many improvements going forward after my PhD, but I will try to keep it maintained.
+
+If you can share your improvements, that would be great, but you are not obligated. Commercial use of FSCT is also permitted.
+
+## Contributing/Collaborating
+This code is likely far from optimal, so if you find errors or have ideas/suggestions on improvements/better practices,
+they would be most welcome!
+
 ## Acknowledgements
-This research was funded by the Australian Research Council - Training Centre for Forest Value 
-(University of Tasmania, Australia).
+This research was funded by the Australian Research Council - Training Centre for Forest Value (IC150100004),
+University of Tasmania, Australia.
 
 Thanks to my supervisory team Assoc. Prof Paul Turner and Dr. Mohammad Sadegh Taskhiri from the eLogistics Research
 Group and Dr. James Montgomery from the University of Tasmania.
@@ -267,10 +289,7 @@ Thanks to Susana Gonzalez Aracil, David Herries from Interpine Group Ltd (New Ze
 Muneri and Mohan Gurung from PF Olsen (Australia) Ltd. https://au.pfolsen.com/, who provided a number of the raw point
 clouds and plot measurements used during the development and validation of this tool.
 
-## Contributing/Collaborating
-Interested in contributing to the FSCT project? Get in touch! This code is likely far from optimal, so if you find 
-errors or have ideas/suggestions on improvements/better practices, they would be very welcome!
-A long term goal is to make a simple executable file for the whole tool to further lower the barriers for usage.
+
 
 ## References
 The deep learning component uses Pytorch https://pytorch.org/ and Pytorch-Geometric 
