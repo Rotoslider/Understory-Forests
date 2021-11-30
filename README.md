@@ -169,11 +169,13 @@ The purpose of this mode is to simulate the behaviour of a typical field plot, b
 at the boundary of the plot radius.
 
 We first trim the point cloud to a radius where the initial trim radius = plot_radius + plot_radius_buffer.
-For example, we might want a 20 m plot_radius. If we use a 3 m plot_radius_buffer, the point cloud will be cropped to
-23 m radius initially. FSCT will then use the measurement information extracted from the trees in that 23 m radius point
-cloud, to check which tree centres are within the 20 m radius. This allows a tree which was just inside the boundary, to
-extend 3 m beyond the plot boundary without losing points. If we used a simple radius trim at 20 m, trees which were
+For example, we might want a 4 m plot_radius. If we use a 2 m plot_radius_buffer, the point cloud will be cropped to
+6 m radius initially. FSCT will then use the measurement information extracted from the trees in that 6 m radius point
+cloud, to check which tree centres are within the 4 m radius. This allows a tree which was just inside the boundary, to
+extend 2 m beyond the plot boundary without losing points. If we used a simple radius trim at 4 m, trees which were
 just inside the boundary may be cut in half.
+
+![img.png](img.png)
 
 This mode is used if plot_radius is non-zero and plot_radius_buffer is non-zero.
 ### Other Parameters
