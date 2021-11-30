@@ -40,7 +40,7 @@ if __name__ == '__main__':
                                          # Veg sorting is required for tree height measurement, but stem sorting isn't necessary for standard use.
 
                           height_percentile=100,  # If the data contains noise above the canopy, you may wish to set this to the 98th percentile of height, otherwise leave it at 100.
-                          tree_base_cutoff_height=10,  # 5,  # A tree must have a cylinder measurement below this height above the DTM to be kept. This filters unsorted branches from being called individual trees.
+                          tree_base_cutoff_height=5,  # A tree must have a cylinder measurement below this height above the DTM to be kept. This filters unsorted branches from being called individual trees.
                           generate_output_point_cloud=1,  # Turn on if you would like a semantic and instance segmented point cloud. This mode will override the "sort_stems" setting if on.
                                                           # If you activate "tree aware plot cropping mode", this function will use it.
                           ground_veg_cutoff_height=3,  # Any vegetation points below this height are considered to be understory and are not assigned to individual trees.
