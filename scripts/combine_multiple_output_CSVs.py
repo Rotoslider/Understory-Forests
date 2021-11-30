@@ -53,5 +53,5 @@ if __name__ == '__main__':
     combined_tree_data = combine_multiple_output_CSVs(point_clouds_to_process, "tree_data.csv")
     combined_tree_data.to_csv(output_directory + '/combined_tree_data.csv', sep=',')
 
-
-
+    combined_taper_data = combine_multiple_output_CSVs(point_clouds_to_process, "taper_data.csv")
+    combined_taper_data.to_csv(output_directory + '/combined_taper_data.csv', sep=',')

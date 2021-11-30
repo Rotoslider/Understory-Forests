@@ -47,6 +47,10 @@ if __name__ == '__main__':
                           veg_sorting_range=1.5,  # Vegetation points can be, at most, this far away from a cylinder horizontally to be matched to a particular tree.
                           stem_sorting_range=1,  # Stem points can be, at most, this far away from a cylinder in 3D to be matched to a particular tree.
                           maximum_stem_diameter=10,  # Any diameters greater than this will be deemed erroneous and deleted.
+                          taper_measurement_height_min=0,  # Lowest height to measure diameter for taper output.
+                          taper_measurement_height_max=30,  # Highest height to measure diameter for taper output.
+                          taper_measurement_height_increment=0.2,  # diameter measurement increment.
+                          taper_slice_thickness=0.2,  # Cylinder measurements within +/- 0.5*taper_slice_thickness are used for taper measurement at a given height. The largest diameter is used.
                           delete_working_directory=True,  # Generally leave this on. Deletes the files used for segmentation after segmentation is finished.
                                                           # You may wish to turn it off if you want to re-run/modify the segmentation code so you don't need to run pre-processing every time.
                           minimise_output_size_mode=0  # Will delete a number of non-essential outputs to reduce storage use.

@@ -222,3 +222,25 @@ def low_resolution_hack_mode(point_cloud, num_iterations, min_spacing, num_procs
         point_cloud = subsample_point_cloud(point_cloud, min_spacing, num_procs)
     print('Hacked point cloud shape:', point_cloud.shape)
     return point_cloud
+
+
+def get_taper(single_tree_cyls, slice_heights, tree_base_height, taper_slice_thickness, plot_id=0):
+    cyl_dict = dict(x=0, y=1, z=2, nx=3, ny=4, nz=5, radius=6, CCI=7, branch_id=8, parent_branch_id=9,
+                    tree_id=10, segment_volume=11, segment_angle_to_horiz=12, height_above_dtm=13)
+
+    diameters = []
+    idx = np.argmin(single_tree_cyls[:, cyl_dict['z']])
+    x_base = single_tree_cyls[idx, cyl_dict['x']]
+    y_base = single_tree_cyls[idx, cyl_dict['y']]
+    z_base = single_tree_cyls[idx, cyl_dict['z']]
+    tree_id = single_tree_cyls[idx, cyl_dict['tree_id']]
+
+    for height in slice_heights:
+        results = single_tree_cyls[np.logical_and(single_tree_cyls[:, 2] >= tree_base_height + height - taper_slice_thickness*0.5,
+                                                  single_tree_cyls[:, 2] <= tree_base_height + height + taper_slice_thickness*0.5)]
+        if results.shape[0] > 0:
+            index = np.argmax(results[:, cyl_dict['radius']])
+            diameters.append(results[index, cyl_dict['radius']] * 2)
+        else:
+            diameters.append(0)
+    return np.hstack((np.array([[plot_id, tree_id, x_base, y_base, z_base]]), np.array([diameters])))
