@@ -56,11 +56,11 @@ finds no trees in the point cloud.
 
 ## FSCT Outputs
 
-**Plot_Report.html and Plot_Report.md**
+```Plot_Report.html``` and ```Plot_Report.md```
 A summary of the information extracted. Nicer to look at than the processing report, but still a bit ugly in Version 1.
 Future versions may make this a bit nicer/add data tables/etc.
 
-**tree_data.csv**
+```tree_data.csv```
 Basic measurements of the trees.
 * Headings are as follows (all units are in metres or cubic metres for volume)
 [x_tree_base, y_tree_base, z_tree_base, DBH, CCI_at_BH, Height, Volume_1, Volume_2, Crown_mean_x, Crown_mean_y, Crown_top_x, Crown_top_y, Crown_top_z, mean_understory_height_in_5m_radius]
@@ -77,7 +77,12 @@ The figure is from this paper: https://doi.org/10.3390/rs12101652 if you would l
 the volume of a cylinder (with a diameter of DBH and 1.3 m tall). This avoids the possibility of a short and shallow 
 angled cone resulting from a short tree with a large DBH.* 
 
-**processing_report.csv**
+```taper_data.csv```
+This is simply the largest diameter at a range of given heights above the DTM for each stem.
+All measurements are in metres.
+Headings are PlotId, TreeId, x_base, y_base, z_base, followed by the measurement heights. 
+
+```processing_report.csv```
 Summary information about the plot and the processing times. Be aware: if you open this while processing and FSCT
 attempts to write to the open file, it will throw a permission error.
 
@@ -87,50 +92,50 @@ attempts to write to the open file, it will throw a permission error.
 
 ### Point Cloud Outputs
 
-**DTM.las** Digital Terrain Model in point form.
+```DTM.las``` Digital Terrain Model in point form.
 ![dtm1.png](readme_images/dtm1.png)
 
-**cropped_DTM.las** Digital Terrain Model cropped to the plot_radius.
+```cropped_DTM.las``` Digital Terrain Model cropped to the plot_radius.
 
-**working_point_cloud.las** The subsampled and cropped point cloud that is fed to the segmentation tool.
+```working_point_cloud.las``` The subsampled and cropped point cloud that is fed to the segmentation tool.
 ![input_point_cloud.png](readme_images/input_point_cloud.png)
 
-**segmented.las** The classified point cloud created by the segmentation tool.
+```segmented.las``` The classified point cloud created by the segmentation tool.
 ![segmented2.png](readme_images/segmented2.png)
 
-**segmented_cleaned.las** The cleaned segmented point cloud created during the post-processing step.
+```segmented_cleaned.las``` The cleaned segmented point cloud created during the post-processing step.
 
-**terrain_points.las**  Semantically segmented terrain points.
+```terrain_points.las```  Semantically segmented terrain points.
 
-**vegetation_points.las** Semantically segmented vegetation points.
+```vegetation_points.las``` Semantically segmented vegetation points.
 
-**ground_veg.las** Ground vegetation points.
+```ground_veg.las``` Ground vegetation points.
 
-**cwd_points.las** Semantically segmented Coarse woody debris points.
+```cwd_points.las``` Semantically segmented Coarse woody debris points.
 
-**stem_points.las** Semantically segmented stem points.
+```stem_points.las``` Semantically segmented stem points.
 
-**cleaned_cyls.las** Point-based cylinder representation with a variety of properties. 
+```cleaned_cyls.las``` Point-based cylinder representation with a variety of properties. Saved as CSV as well for convenience/ease of use.
 
-**cleaned_cyl_vis.las** A point cloud visualisation of the circles/cylinders defined in cleaned_cyls.las
+```cleaned_cyl_vis.las``` A point cloud visualisation of the circles/cylinders defined in cleaned_cyls.las
 Essentially makes circles out of points for every measurement in cleaned_cyls.
 
 ![cleaned_cyl_vis.png](readme_images/cleaned_cyl_vis.png)
 
-**stem_points_sorted.las** Stem points assigned by tree_id. **This is a simple output at the moment and will not give
-highly reliable results.** This current iteration may be useful for generating instance segmentation training datasets,
+```stem_points_sorted.las``` Stem points assigned by tree_id. **This is a simple output at the moment and will not give
+highly reliable results. This current iteration may be useful for generating instance segmentation training datasets,
 however, this will likely require you to manually correct it to be of high enough quality for training data.
 
-**veg_points_sorted.las** Vegetation assigned by tree_id. Ground points are given a tree_id of 0. **This is a simple 
+```veg_points_sorted.las``` Vegetation assigned by tree_id. Ground points are given a tree_id of 0. **This is a simple 
 output at the moment and will not give highly reliable results.** This current iteration may be useful for generating 
 instance segmentation training datasets, however, this will likely require you to manually correct it to be of high 
 enough quality for training data.
 
 
-**text_point_cloud.las** A point cloud text visualisation of TreeId, DBH, height, CCI at breast height, Volume_1 and 
+```text_point_cloud.las``` A point cloud text visualisation of TreeId, DBH, height, CCI at breast height, Volume_1 and 
 Volume_2. It's a bit dodgy, but it works in any point cloud viewer without fuss.
 
-**tree_aware_cropped_point_cloud.las** If you specify a plot_radius and a plot_radius_buffer, this will trim the point
+```tree_aware_cropped_point_cloud.las``` If you specify a plot_radius and a plot_radius_buffer, this will trim the point
 cloud to the plot_radius. See the **Tree Aware Plot Cropping** section in User Parameters for more information on this mode.
 
 ![individual_tree_segmentation.png](readme_images/individual_tree_segmentation.png)
@@ -155,13 +160,13 @@ Hopefully in time, I'll be able to make this more efficient and less resource hu
 ## User Parameters
 
 ### Circular Plot options
-#### plot_centre
+```plot_centre```
 [X, Y] Coordinates of the plot centre (metres). If "None", plot_centre is the centre of the bounding box of the point cloud. Leave at None if not using.
 
-#### plot_radius
+```plot_radius```
 If 0 m, the plot is not cropped. Otherwise, the plot is cylindrically cropped from the plot centre with plot_radius + plot_radius_buffer. Leave at 0 if not using.
 
-#### plot_radius_buffer
+```plot_radius_buffer```
 This is used for "Tree Aware Plot Cropping Mode". Leave at 0 if not using.
 
 ### Tree Aware Plot Cropping
@@ -180,76 +185,76 @@ just inside the boundary may be cut in half.
 This mode is used if plot_radius is non-zero and plot_radius_buffer is non-zero.
 ### Other Parameters
 
-#### PlotId
+```PlotId```
 The "PlotId" is taken from the filename of the input point cloud, so name files accordingly.
 
 ### Set these appropriately for your hardware.
-#### batch_size
+```batch_size```
 The number of samples in a batch used for the deep learning inference. This number depends on the amount of GPU memory you
 have. If you set this too high, you will run out of GPU memory. As a rough guide, I can fit 18-20 on an Nvidia Titan RTX GPU with 24 GB GPU
 RAM.
 
-#### num_procs
+```num_procs```
 The number of CPU cores you have/wish to use.
 
 ### Optional settings - Generally leave as they are.
 
-#### ground_veg_cutoff_height
+```ground_veg_cutoff_height```
 Any vegetation points below this height are considered to be understory and are not assigned to individual trees.
 
-#### veg_sorting_range
+```veg_sorting_range```
 Vegetation points can be, at most, this far away from a cylinder horizontally to be matched to a particular tree.
 
-#### sort_stems
+```sort_stems```
 If you don't need the sorted stem points, turning this off speeds things up. Veg sorting is required for tree height measurement, but stem sorting isn't necessary for general use.
 
-#### stem_sorting_range
+```stem_sorting_range```
 Stem points can be, at most, this far away from a cylinder in 3D to be matched to a particular tree.
 
-#### taper_measurement_height_min
+```taper_measurement_height_min```
 The starting height for the output taper measurements.
 
-#### taper_measurement_height_max
+```taper_measurement_height_max```
 Taper measurements are extracted up to this height above the DTM.
 
-#### taper_measurement_height_increment
+```taper_measurement_height_increment```
 The increment of the taper measurements.
 
-#### taper_slice_thickness
+```taper_slice_thickness```
 The cleaned cylinders (in the point based representation) within +/- 0.5 * taper_slice_thickness are found. The largest radius within this slice is used as the diameter for that particular height. 
 
-#### delete_working_directory
+```delete_working_directory```
 Generally leave this on. Deletes the files used for segmentation after segmentation is finished.
 You may wish to turn it off if you want to re-run/modify the segmentation code so you don't need to run pre-processing every time.
 
 ## Scripts
 
 ### Scripts you would normally interact with:
-**run.py** This is how you should interface with the code base under normal use.
+```run.py``` This is how you should interface with the code base under normal use.
 
-**combine_multiple_output_CSVs.py** This will get
+```combine_multiple_output_CSVs.py``` This will get
 all "plot_summary.csv" files and combine them into one CSV. This will be saved in the highest common directory
 of the selected point clouds.
 
 ### Scripts you would only use directly if you are modifying the software:
-**run_tools.py** A few helper functions to clean up run.py.
+```run_tools.py``` A few helper functions to clean up run.py.
 
-**tools.py** Other helper functions used throughout the code base.
+```tools.py``` Other helper functions used throughout the code base.
 
-**preprocessing.py** Performs subsampling of the input point cloud and handles the slicing and dicing of the point
+```preprocessing.py``` Performs subsampling of the input point cloud and handles the slicing and dicing of the point
 cloud into samples the segmentation model can work with.
 
-**model.py** The segmentation model modified from the Pytorch Geometric implementation of Pointnet++.
+```model.py``` The segmentation model modified from the Pytorch Geometric implementation of Pointnet++.
 
-**inference.py** Performs the semantic segmentation on the samples and then reassembles them back into a full point
+```inference.py``` Performs the semantic segmentation on the samples and then reassembles them back into a full point
 cloud.
 
-**post_segmentation_script.py** Creates the Digital Terrain Model (DTM) and uses this and some basic rules to clean the
+```post_segmentation_script.py``` Creates the Digital Terrain Model (DTM) and uses this and some basic rules to clean the
 segmented point cloud up. Creates the class specific point clouds (terrain, vegetation, CWD and stem points).
 
-**measure.py** Extracts measurements and metrics from the outputs of the post_segmentation_script.
+```measure.py``` Extracts measurements and metrics from the outputs of the post_segmentation_script.
 
-**report_writer.py** Summarises the measurements in a simple report format.
+```report_writer.py``` Summarises the measurements in a simple report format.
 
 
 
