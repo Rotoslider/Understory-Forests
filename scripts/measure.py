@@ -865,7 +865,6 @@ class MeasureTree:
         interpolated_full_cyl_array[:, self.cyl_dict['segment_angle_to_horiz']] = self.compute_angle(v1, v2)
         interpolated_full_cyl_array = get_heights_above_DTM(interpolated_full_cyl_array, self.DTM)
 
-
         save_file(self.output_dir + 'interpolated_full_cyl_array.las', interpolated_full_cyl_array, headers_of_interest=list(self.cyl_dict))
         # interpolated_full_cyl_array, _ = load_file(self.output_dir + 'interpolated_full_cyl_array.las', headers_of_interest=list(self.cyl_dict))
         print(interpolated_full_cyl_array.shape)
@@ -890,7 +889,6 @@ class MeasureTree:
 
         tree_data = np.zeros((0, 16))
         radial_tree_aware_plot_cropping = False
-        square_tree_aware_plot_cropping = False
         plot_centre = [[float(self.plot_summary['Plot Centre X']), float(self.plot_summary['Plot Centre Y'])]]
 
         stem_points_sorted = np.zeros((0, len(list(self.stem_dict))))
