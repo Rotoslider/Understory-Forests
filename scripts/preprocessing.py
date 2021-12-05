@@ -191,7 +191,7 @@ class Preprocessing:
                                 'Avg Gradient',
                                 'Avg Gradient X',
                                 'Avg Gradient Y',
-                                'Canopy Gap Fraction',
+                                'Canopy Cover Fraction',
                                 'Understory Veg Coverage Fraction',
                                 'CWD Coverage Fraction',
                                 'Num Points Original PC',

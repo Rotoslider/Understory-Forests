@@ -134,7 +134,7 @@ class MeasureTree:
                     if len(cwd_indices) > 5:
                         self.cwd_area += 1
 
-        print("Canopy Gap Fraction:", self.canopy_area / self.ground_area)
+        print("Canopy Cover Fraction:", self.canopy_area / self.ground_area)
         print("Understory Veg Fraction:", self.ground_veg_area / self.ground_area)
         print("Coarse Woody Debris Fraction:", self.cwd_area / self.ground_area)
         max_z = np.max(np.hstack((self.stem_points[:, 2], self.vegetation_points[:, 2], self.cwd_points[:, 2], self.terrain_points[:, 2])))
@@ -1170,7 +1170,7 @@ class MeasureTree:
             self.plot_summary['Max Volume 2'] = np.max(tree_data['Volume_2'])
             self.plot_summary['Total Volume 2'] = np.sum(tree_data['Volume_2'])
 
-            self.plot_summary['Canopy Gap Fraction'] = self.canopy_area / self.ground_area
+            self.plot_summary['Canopy Cover Fraction'] = self.canopy_area / self.ground_area
 
         else:
             self.plot_summary['Mean DBH'] = 0
@@ -1187,7 +1187,7 @@ class MeasureTree:
             self.plot_summary['Median Volume'] = 0
             self.plot_summary['Min Volume'] = 0
             self.plot_summary['Max Volume'] = 0
-            self.plot_summary['Canopy Gap Fraction'] = 0
+            self.plot_summary['Canopy Cover Fraction'] = 0
 
         self.plot_summary['Avg Gradient'] = avg_gradient
         self.plot_summary['Avg Gradient X'] = avg_gradient_x
