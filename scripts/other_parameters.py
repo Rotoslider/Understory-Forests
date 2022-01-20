@@ -3,7 +3,7 @@
 # to tune these better for your particular data. Almost everything here is a trade-off between different situations, so
 # optimisation is not straight-forward.
 
-other_parameters = dict(model_filename='../model/model.pth',
+other_parameters = dict(model_filename='model.pth',
                         box_dimensions=[6, 6, 6],  # Dimensions of the sliding box used for semantic segmentation.
                         box_overlap=[0.5, 0.5, 0.5],  # Overlap of the sliding box used for semantic segmentation.
                         min_points_per_box=1000,  # Minimum number of points for input to the model. Too few points and it becomes near impossible to accurately label them (though assuming vegetation class is the safest bet here).
