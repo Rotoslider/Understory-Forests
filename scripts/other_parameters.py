@@ -14,9 +14,7 @@ other_parameters = dict(model_filename='model.pth',
                         cwd_class=3,  # Don't change
                         stem_class=4,  # Don't change
                         grid_resolution=0.5,  # Resolution of the DTM.
-                        supplementary_map_resolution=0.1,  # Resolution of the vegetation and CWD points in the output plot map (used in the plot report).
                         num_neighbours=5,
-                        Vegetation_coverage_resolution=0.25,
                         sorting_search_angle=20,
                         sorting_search_radius=1,
                         sorting_angle_tolerance=90,
