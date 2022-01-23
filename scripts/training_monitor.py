@@ -8,7 +8,6 @@ def training_plotter():
     ax1 = fig1.add_subplot(1, 2, 1)
     ax2 = fig1.add_subplot(1, 2, 2)
 
-
     while 1:
         try:
             ax1.clear()

@@ -58,8 +58,9 @@ class TrainModel:
     def preprocessing(self):
         if self.training_parameters["preprocess_train_datasets"]:
             train_point_cloud_list = glob.glob("../data/train_dataset/*.las")
-            print("Cleaning train_dataset sample directory...")
-            shutil.rmtree("../../FSCT/data/train_dataset/sample_dir/", ignore_errors=True)
+            if self.training_parameters['clear_sample_dirs']:
+                print("Cleaning train_dataset sample directory...")
+                shutil.rmtree("../../FSCT/data/train_dataset/sample_dir/", ignore_errors=True)
             if not os.path.isdir("../data/train_dataset/sample_dir/"):
                 os.makedirs("../data/train_dataset/sample_dir/")
 
@@ -71,8 +72,9 @@ class TrainModel:
 
         if self.training_parameters["preprocess_test_datasets"]:
             test_point_cloud_list = glob.glob("../data/test_dataset/*.las")
-            print("Cleaning test_dataset sample directory...")
-            shutil.rmtree("../../FSCT/data/test_dataset/sample_dir/", ignore_errors=True)
+            if self.training_parameters['clear_sample_dirs']:
+                print("Cleaning test_dataset sample directory...")
+                shutil.rmtree("../../FSCT/data/test_dataset/sample_dir/", ignore_errors=True)
             if not os.path.isdir("../data/test_dataset/sample_dir/"):
                 os.makedirs("../data/test_dataset/sample_dir/")
 
@@ -84,8 +86,9 @@ class TrainModel:
 
         if self.training_parameters["preprocess_validation_datasets"]:
             validation_point_cloud_list = glob.glob("../data/validation_dataset/*.las")
-            print("Cleaning validation_dataset sample directory...")
-            shutil.rmtree("../../FSCT/data/validation_dataset/sample_dir/", ignore_errors=True)
+            if self.training_parameters['clear_sample_dirs']:
+                print("Cleaning validation_dataset sample directory...")
+                shutil.rmtree("../../FSCT/data/validation_dataset/sample_dir/", ignore_errors=True)
             if not os.path.isdir("../data/validation_dataset/sample_dir/"):
                 os.makedirs("../data/validation_dataset/sample_dir/")
 
@@ -199,6 +202,7 @@ class TrainModel:
                 pass
 
     def run_training(self):
+        start_epoch = 0
         model = Net(num_classes=4).to(self.device)
         if self.training_parameters['load_existing_model']:
             print('Loading existing model...')
@@ -208,13 +212,17 @@ class TrainModel:
             except FileNotFoundError:
                 print("File not found, creating new model...")
                 torch.save(model.state_dict(), "../model/" + self.training_parameters['model_filename'])
+                np.savetxt("../model/training_history.csv", np.zeros((2, 5)))
 
             try:
                 self.training_history = np.loadtxt("../model/training_history.csv")
-                start_epoch = int(np.max(self.training_history[:, 0]))
+                start_epoch = int(np.max(np.atleast_2d(self.training_history).T[:, 0]))
                 print("Loaded training history successfully. Starting from epoch", start_epoch)
             except OSError:
                 pass
+        else:
+            torch.save(model.state_dict(), "../model/" + self.training_parameters['model_filename'])
+            np.savetxt("../model/training_history.csv", np.zeros((2, 5)))
 
         model = model.to(self.device)
         optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=self.training_parameters['learning_rate'])
@@ -255,6 +263,9 @@ class TrainModel:
                     print('{:0.1f}'.format(i / total_samples * 100) + ' %')
 
                 i += 1
+            print("Saving model...")
+            torch.save(model.state_dict(), "../model/" + self.training_parameters['model_filename'])
+            print("Model saved.")
             epoch_loss = running_loss / len(self.train_loader)
             epoch_acc = running_acc / len(self.train_loader)
             self.update_log(epoch, epoch_loss, epoch_acc, val_epoch_loss, val_epoch_acc)
@@ -328,6 +339,7 @@ if __name__ == '__main__':
     parameters = dict(preprocess_train_datasets=1,  # turn on for first run to create the samples
                       preprocess_validation_datasets=1,  # turn on for first run to create the samples
                       preprocess_test_datasets=1,  # turn on for first run to create the samples
+                      clear_sample_dirs=1,  # if true, deletes sample_dirs when preprocessing is run.
                       load_existing_model=1,  # leave on unless you want to create a new model. Don't forget to turn it back on or you will overwrite your model...
                       num_epochs=2000,  # Number of epochs you want to train for. It saves every epoch, so you can stop it early.
                       learning_rate=0.000025,  # The learning rate for the model. It needs to be quite low or the loss may "explode". If you see a large loss value (if it starts going into the 100s or higher), reduce this.
