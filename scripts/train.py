@@ -19,11 +19,21 @@ class TrainModel:
         self.preprocessing()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.training_history = np.zeros((0, 5))
+
+        if not os.path.isdir("../data/train_dataset/"):
+            os.makedirs("../data/train_dataset/")
+
+        if not os.path.isdir("../data/validation_dataset/"):
+            os.makedirs("../data/validation_dataset/")
+
+        if not os.path.isdir("../data/test_dataset/"):
+            os.makedirs("../data/test_dataset/")
+
         train_dataset = TrainingDataset(root_dir="../data/train_dataset/sample_dir/",
                                         points_per_box=training_parameters['max_points_per_box'],
                                         device=self.device)
 
-        validation_dataset = ValidationDataset(root_dir="../data/train_dataset/sample_dir/",
+        validation_dataset = ValidationDataset(root_dir="../data/validation_dataset/sample_dir/",
                                                points_per_box=training_parameters['max_points_per_box'],
                                                device=self.device)
 
@@ -50,6 +60,9 @@ class TrainModel:
             train_point_cloud_list = glob.glob("../data/train_dataset/*.las")
             print("Cleaning train_dataset sample directory...")
             shutil.rmtree("../../FSCT/data/train_dataset/sample_dir/", ignore_errors=True)
+            if not os.path.isdir("../data/train_dataset/sample_dir/"):
+                os.makedirs("../data/train_dataset/sample_dir/")
+
             print("Preprocessing train_dataset point clouds...")
             for point_cloud_file in train_point_cloud_list:
                 print(point_cloud_file)
@@ -60,6 +73,9 @@ class TrainModel:
             test_point_cloud_list = glob.glob("../data/test_dataset/*.las")
             print("Cleaning test_dataset sample directory...")
             shutil.rmtree("../../FSCT/data/test_dataset/sample_dir/", ignore_errors=True)
+            if not os.path.isdir("../data/test_dataset/sample_dir/"):
+                os.makedirs("../data/test_dataset/sample_dir/")
+
             print("Preprocessing test_dataset point clouds...")
             for point_cloud_file in test_point_cloud_list:
                 print(point_cloud_file)
@@ -70,6 +86,9 @@ class TrainModel:
             validation_point_cloud_list = glob.glob("../data/validation_dataset/*.las")
             print("Cleaning validation_dataset sample directory...")
             shutil.rmtree("../../FSCT/data/validation_dataset/sample_dir/", ignore_errors=True)
+            if not os.path.isdir("../data/validation_dataset/sample_dir/"):
+                os.makedirs("../data/validation_dataset/sample_dir/")
+
             print("Preprocessing validation_dataset point clouds...")
             for point_cloud_file in validation_point_cloud_list:
                 print(point_cloud_file)
@@ -306,9 +325,9 @@ class TrainModel:
 
 
 if __name__ == '__main__':
-    parameters = dict(preprocess_train_datasets=0,  # turn on for first run to create the samples
-                      preprocess_validation_datasets=0,  # turn on for first run to create the samples
-                      preprocess_test_datasets=0,  # turn on for first run to create the samples
+    parameters = dict(preprocess_train_datasets=1,  # turn on for first run to create the samples
+                      preprocess_validation_datasets=1,  # turn on for first run to create the samples
+                      preprocess_test_datasets=1,  # turn on for first run to create the samples
                       load_existing_model=1,  # leave on unless you want to create a new model. Don't forget to turn it back on or you will overwrite your model...
                       num_epochs=2000,  # Number of epochs you want to train for. It saves every epoch, so you can stop it early.
                       learning_rate=0.000025,  # The learning rate for the model. It needs to be quite low or the loss may "explode". If you see a large loss value (if it starts going into the 100s or higher), reduce this.
