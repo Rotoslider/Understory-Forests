@@ -99,9 +99,11 @@ class SemanticSegmentation:
             model.load_state_dict(torch.load('../model/' + self.parameters['model_filename'], map_location=torch.device('cpu')), strict=False)
         else:
             model.load_state_dict(torch.load('../model/' + self.parameters['model_filename']), strict=False)
+
         model.eval()
         num_boxes = test_dataset.__len__()
         with torch.no_grad():
+
             self.output_point_cloud = np.zeros((0, 3 + 4))
             output_list = []
             for i, data in enumerate(test_loader):

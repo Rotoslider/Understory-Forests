@@ -180,7 +180,7 @@ cloud, to check which tree centres are within the 4 m radius. This allows a tree
 extend 2 m beyond the plot boundary without losing points. If we used a simple radius trim at 4 m, trees which were
 just inside the boundary may be cut in half.
 
-![img.png](img.png)
+![img.png](readme_images/tree_aware_plot_cropping.png)
 
 This mode is used if plot_radius is non-zero and plot_radius_buffer is non-zero.
 ### Other Parameters
@@ -257,6 +257,7 @@ segmented point cloud up. Creates the class specific point clouds (terrain, vege
 ```report_writer.py``` Summarises the measurements in a simple report format.
 
 
+#
 
 
 ## Known Limitations
@@ -278,6 +279,62 @@ Please feel free to use/modify/share this code. If you can improve/evaluate the 
 I might not have a chance to make many improvements going forward after my PhD, but I will try to keep it maintained.
 
 If you can share your improvements, that would be great, but you are not obligated. Commercial use of FSCT is also permitted.
+
+
+## Instructions for training a new semantic segmentation model
+
+FSCT relies heavily on the segmentation model working properly. 
+Training your own model may help expand the utility of FSCT to additional datasets outside of the original training set I used.
+
+### Step 1 - Creating training data
+Unless you modify the code, training data must be provided as a .las file.
+This file must have a "label" column, with integer based labels as follows: 1: Terrain, 2: Vegetation, 3: Coarse woody debris, 4: Stems/branches.
+
+Look at a "segmented.las" or "segmented_cleaned.las" file (an output of FSCT in normal use) as an example of what the training data must look like.
+It is strongly recommended to use FSCT to label your data, THEN correct it manually. 
+
+**Note: manually segmenting/correcting point clouds is extremely tedious. The original dataset took me ~3-4 weeks to label from scratch...
+I use CloudCompare's segmentation tool for manually correcting the training data. You should start by loading the terrain_points.las, vegetation_points.las, cwd_points.las, and stem_points.las. 
+I may eventually add an explanation video of how I do this, but for now, you will need to work out a way to do this.
+Importantly, take great care to label consistently. Sloppy labelling may result in your model not learning what you want it to learn. Small details can matter.**
+
+### Step 2 - Preparing training data for processing
+Take your chosen point cloud, and chop it into train, validation and test slices. You may choose to slice them 
+as 50%, 25% and 25% respectively, but use your discretion.
+- Save each slice as a .las file.
+- Place the "train" slice into the directory ```FSCT/data/train_dataset/```
+- Place the "validation" slice into the directory ```FSCT/data/validation_dataset/```
+- Place the "test" slice into the directory ```FSCT/data/test_dataset/```
+
+You can have multiple point clouds in the above directories, and during preprocessing, they will all be placed in the respective sample directories ```FSCT/data/*_dataset/sample_dir/```
+
+### Step 3 - Preprocessing the training data
+Set the parameters: ```preprocess_train_datasets```, ```preprocess_validation_datasets``` and ```preprocess_test_datasets``` to True (or 1).
+Run the ```train.py``` file and it will generate the samples for you.
+
+**WARNING** - Preprocessing will delete the contents of the sample directories when run, to avoid duplicating datasets.
+
+For each labelled point cloud you wish to use for training, you must slice it into a chunk for training (most of the point cloud), and a chunk for validation.
+Place the training chunk into the "data/train_dataset/" directory.
+
+### Step 4 - Train the model
+You can either let the script continue on after the preprocessing step, or stop it, turn off the preprocessing modes and rerun.
+Be sure to set the parameters according to your computer's specs. If you have CUDA errors, reduce the batch size or switch to CPU mode. If you don't have an Nvidia GPU, you must use CPU mode, but training will be very slow...
+
+The ```training_monitor.py``` script will plot the loss and accuracy of the model. You must run this simultaneously in a separate terminal/python console to the training script.
+
+**Note: the training process will take several days on a powerful desktop computer.**
+
+### Step 5 - Use the trained model in FSCT
+Simply change the ```model_filename``` in ```other_parameters.py``` to the model you named in ```train.py```.
+
+### An idea potentially worth exploring
+FSCT is already capable of producing reasonably well segmented point clouds (within the stated limitations). 
+By leveraging FSCT to automatically segment point clouds, it seems likely that the model could almost train itself into
+a more consistent and robust state through the use of carefully designed data augmentations.
+
+### Created a model that you wish to contribute to the repository?
+Get in touch and if it works well, I'll happily add it to the model collection of this repo.
 
 ## Contributing/Collaborating
 This code is likely far from optimal, so if you find errors or have ideas/suggestions on improvements/better practices,

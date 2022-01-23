@@ -1,22 +1,8 @@
 import torch
 import torch.nn.functional as F
 from torch_geometric.nn import knn_interpolate
-from torch_geometric.utils import intersection_and_union as i_and_u
 from torch.nn import Sequential as Seq, Linear as Lin, ReLU, BatchNorm1d as BN
-from torch_geometric.data import Dataset, DataLoader, Data
 from torch_geometric.nn import PointConv, fps, radius, global_max_pool
-import numpy as np
-import glob
-import pandas as pd
-import random
-import math
-from preprocessing import Preprocessing
-import torch.optim as optim
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.lines import Line2D
-from matplotlib.animation import FuncAnimation
-from torch.optim.lr_scheduler import ExponentialLR
 
 
 class SAModule(torch.nn.Module):
