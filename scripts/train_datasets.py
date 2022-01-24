@@ -95,8 +95,11 @@ def augmentations(x, y):
     def random_point_removal(x, y):
         idx = np.arange(int(np.shape(x)[0]*0.5), np.shape(x)[0])
         keep_idx = np.random.choice(idx)
-        x = x[:keep_idx, :]
-        y = y[:keep_idx]
+        xnew = x[:keep_idx, :]
+        ynew = y[:keep_idx]
+        if xnew.shape[0] > 1000:
+            x = xnew
+            y = ynew
         return x, y
 
     def random_noise_addition(points):

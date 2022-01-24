@@ -216,7 +216,7 @@ class TrainModel:
 
             try:
                 self.training_history = np.loadtxt("../model/training_history.csv")
-                start_epoch = int(np.max(np.atleast_2d(self.training_history).T[:, 0]))
+                start_epoch = int(np.max(np.atleast_2d(self.training_history)[:, 0]))
                 print("Loaded training history successfully. Starting from epoch", start_epoch)
             except OSError:
                 pass
@@ -290,8 +290,8 @@ class TrainModel:
                     if i % 10 == 0:
                         print('{:0.1f}'.format(i / total_samples * 100) + ' %')
                     i += 1
-                val_epoch_loss = running_loss / len(self.train_loader)
-                val_epoch_acc = running_acc / len(self.train_loader)
+                val_epoch_loss = running_loss / len(self.validation_loader)
+                val_epoch_acc = running_acc / len(self.validation_loader)
                 self.update_log(epoch, epoch_loss, epoch_acc, val_epoch_loss, val_epoch_acc)
                 print("Validation epoch accuracy: ", np.around(val_epoch_acc, 4), ", Loss: ", np.around(val_epoch_loss, 4))
                 print("=====================================================================")
@@ -329,8 +329,8 @@ class TrainModel:
             del loss, outputs, data.y, data.pos
             i += 1
 
-        overall_test_loss = running_loss / len(self.train_loader)
-        overall_test_acc = running_acc / len(self.train_loader)
+        overall_test_loss = running_loss / len(self.test_loader)
+        overall_test_acc = running_acc / len(self.test_loader)
         print("Test - Total accuracy: ", np.around(overall_test_acc, 4), "    - Total loss: ", np.around(overall_test_loss, 4))
         print("=====================================================================")
 
@@ -343,7 +343,7 @@ if __name__ == '__main__':
                       load_existing_model=1,  # leave on unless you want to create a new model. Don't forget to turn it back on or you will overwrite your model...
                       num_epochs=2000,  # Number of epochs you want to train for. It saves every epoch, so you can stop it early.
                       learning_rate=0.000025,  # The learning rate for the model. It needs to be quite low or the loss may "explode". If you see a large loss value (if it starts going into the 100s or higher), reduce this.
-                      model_filename='model2.pth',
+                      model_filename='model.pth',
                       box_dimensions=np.array([6, 6, 6]),
                       box_overlap=[0.5, 0.5, 0.5],
                       min_points_per_box=1000,
