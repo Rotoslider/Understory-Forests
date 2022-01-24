@@ -21,13 +21,13 @@ def training_plotter():
             if training_history.shape[0] > 1:
                 ax1.plot(training_history[:, 0], training_history[:, 1], c='green', label='train')
                 ax1.plot(training_history[:, 0], training_history[:, 3], c='blue', label='validation')
-                ax1.legend(loc="upper right")
+                ax1.legend(loc="lower left")
                 ax2.plot(training_history[:, 0], training_history[:, 2], c='green', label='train')
                 ax2.plot(training_history[:, 0], training_history[:, 4], c='blue', label='validation')
-                ax2.legend(loc="upper right")
+                ax2.legend(loc="lower left")
 
             plt.draw()
-            plt.pause(60)
+            plt.pause(120)
 
         except OSError or IndexError:
             pass

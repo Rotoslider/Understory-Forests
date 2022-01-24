@@ -343,7 +343,7 @@ if __name__ == '__main__':
                       load_existing_model=1,  # leave on unless you want to create a new model. Don't forget to turn it back on or you will overwrite your model...
                       num_epochs=2000,  # Number of epochs you want to train for. It saves every epoch, so you can stop it early.
                       learning_rate=0.000025,  # The learning rate for the model. It needs to be quite low or the loss may "explode". If you see a large loss value (if it starts going into the 100s or higher), reduce this.
-                      model_filename='model.pth',
+                      model_filename='model2.pth',
                       box_dimensions=np.array([6, 6, 6]),
                       box_overlap=[0.5, 0.5, 0.5],
                       min_points_per_box=1000,
