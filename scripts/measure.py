@@ -902,6 +902,7 @@ class MeasureTree:
         input_data = []
         i = 0
         tree_id_list = np.unique(interpolated_full_cyl_array[:, self.cyl_dict['tree_id']])
+        taper_array = np.zeros((0, self.taper_measurement_heights.shape[0] + 5))
 
         if tree_id_list.shape[0] > 0:
             max_tree_id = int(np.max(tree_id_list))
@@ -964,7 +965,6 @@ class MeasureTree:
                                                        (np.floor(taper_meas_height_max*taper_meas_height_increment)/taper_meas_height_increment)+taper_meas_height_increment,
                                                        taper_meas_height_increment)
 
-            taper_array = np.zeros((0, self.taper_measurement_heights.shape[0] + 5))
 
             for tree_id in np.unique(cleaned_cyls[:, self.cyl_dict['tree_id']]):
                 tree = cleaned_cyls[cleaned_cyls[:, self.cyl_dict['tree_id']] == tree_id]
