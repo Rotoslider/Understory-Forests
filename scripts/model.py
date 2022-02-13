@@ -59,7 +59,6 @@ class FPModule(torch.nn.Module):
 class Net(torch.nn.Module):
     def __init__(self, num_classes):
         super(Net, self).__init__()
-        # idea why this isn't working... too many points?
         self.sa1_module = SAModule(0.1, 0.2, MLP([3, 128, 256, 512]))
         self.sa2_module = SAModule(0.05, 0.4, MLP([512 + 3, 512, 1024, 1024]))
         self.sa3_module = GlobalSAModule(MLP([1024 + 3, 1024, 2048, 2048]))
