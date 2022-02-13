@@ -10,60 +10,36 @@ import glob
 import random
 import threading
 import os
-import shutil
 
 
 class TrainModel:
     def __init__(self, training_parameters):
         self.training_parameters = training_parameters
         self.preprocessing()
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        # self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = training_parameters['device']
         self.training_history = np.zeros((0, 5))
-
-        if not os.path.isdir("../data/train_dataset/"):
-            os.makedirs("../data/train_dataset/")
-
-        if not os.path.isdir("../data/validation_dataset/"):
-            os.makedirs("../data/validation_dataset/")
-
-        if not os.path.isdir("../data/test_dataset/"):
-            os.makedirs("../data/test_dataset/")
-
         train_dataset = TrainingDataset(root_dir="../data/train_dataset/sample_dir/",
                                         points_per_box=training_parameters['max_points_per_box'],
                                         device=self.device)
 
-        validation_dataset = ValidationDataset(root_dir="../data/validation_dataset/sample_dir/",
+        validation_dataset = ValidationDataset(root_dir="../data/train_dataset/sample_dir/",
                                                points_per_box=training_parameters['max_points_per_box'],
                                                device=self.device)
 
-        test_dataset = ValidationDataset(root_dir="../data/test_dataset/sample_dir/",
-                                         points_per_box=training_parameters['max_points_per_box'],
-                                         device=self.device)
-
         self.train_loader = DataLoader(train_dataset,
-                                       batch_size=training_parameters['train_batch_size'],
+                                       batch_size=training_parameters['batch_size'],
                                        shuffle=True,
                                        num_workers=0)
 
         self.validation_loader = DataLoader(validation_dataset,
-                                            batch_size=training_parameters['validation_batch_size'],
+                                            batch_size=training_parameters['batch_size'],
                                             shuffle=True,
                                             num_workers=0)
-        self.test_loader = DataLoader(test_dataset,
-                                      batch_size=training_parameters['test_batch_size'],
-                                      shuffle=True,
-                                      num_workers=0)
 
     def preprocessing(self):
         if self.training_parameters["preprocess_train_datasets"]:
             train_point_cloud_list = glob.glob("../data/train_dataset/*.las")
-            if self.training_parameters['clear_sample_dirs']:
-                print("Cleaning train_dataset sample directory...")
-                shutil.rmtree("../../FSCT/data/train_dataset/sample_dir/", ignore_errors=True)
-            if not os.path.isdir("../data/train_dataset/sample_dir/"):
-                os.makedirs("../data/train_dataset/sample_dir/")
-
             print("Preprocessing train_dataset point clouds...")
             for point_cloud_file in train_point_cloud_list:
                 print(point_cloud_file)
@@ -72,12 +48,6 @@ class TrainModel:
 
         if self.training_parameters["preprocess_test_datasets"]:
             test_point_cloud_list = glob.glob("../data/test_dataset/*.las")
-            if self.training_parameters['clear_sample_dirs']:
-                print("Cleaning test_dataset sample directory...")
-                shutil.rmtree("../../FSCT/data/test_dataset/sample_dir/", ignore_errors=True)
-            if not os.path.isdir("../data/test_dataset/sample_dir/"):
-                os.makedirs("../data/test_dataset/sample_dir/")
-
             print("Preprocessing test_dataset point clouds...")
             for point_cloud_file in test_point_cloud_list:
                 print(point_cloud_file)
@@ -86,12 +56,6 @@ class TrainModel:
 
         if self.training_parameters["preprocess_validation_datasets"]:
             validation_point_cloud_list = glob.glob("../data/validation_dataset/*.las")
-            if self.training_parameters['clear_sample_dirs']:
-                print("Cleaning validation_dataset sample directory...")
-                shutil.rmtree("../../FSCT/data/validation_dataset/sample_dir/", ignore_errors=True)
-            if not os.path.isdir("../data/validation_dataset/sample_dir/"):
-                os.makedirs("../data/validation_dataset/sample_dir/")
-
             print("Preprocessing validation_dataset point clouds...")
             for point_cloud_file in validation_point_cloud_list:
                 print(point_cloud_file)
@@ -129,7 +93,6 @@ class TrainModel:
 
     def preprocess_point_cloud(self, point_cloud, sample_dir):
         print("Pre-processing point cloud...")
-        point_cloud[:, :3] = point_cloud[:, :3] - np.median(point_cloud[:, :3], axis=0)
         Xmax = np.max(point_cloud[:, 0])
         Xmin = np.min(point_cloud[:, 0])
         Ymax = np.max(point_cloud[:, 1])
@@ -202,7 +165,6 @@ class TrainModel:
                 pass
 
     def run_training(self):
-        start_epoch = 0
         model = Net(num_classes=4).to(self.device)
         if self.training_parameters['load_existing_model']:
             print('Loading existing model...')
@@ -212,24 +174,20 @@ class TrainModel:
             except FileNotFoundError:
                 print("File not found, creating new model...")
                 torch.save(model.state_dict(), "../model/" + self.training_parameters['model_filename'])
-                np.savetxt("../model/training_history.csv", np.zeros((2, 5)))
 
             try:
                 self.training_history = np.loadtxt("../model/training_history.csv")
-                start_epoch = int(np.max(np.atleast_2d(self.training_history)[:, 0]))
-                print("Loaded training history successfully. Starting from epoch", start_epoch)
+                print("Loaded training history successfully.")
             except OSError:
                 pass
-        else:
-            torch.save(model.state_dict(), "../model/" + self.training_parameters['model_filename'])
-            np.savetxt("../model/training_history.csv", np.zeros((2, 5)))
 
         model = model.to(self.device)
         optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=self.training_parameters['learning_rate'])
         criterion = nn.CrossEntropyLoss()
+        dataloaders = dict(train=self.train_loader, validation=self.validation_loader)
         val_epoch_loss = 0
         val_epoch_acc = 0
-        for epoch in range(start_epoch, self.training_parameters['num_epochs'] + start_epoch):
+        for epoch in range(self.training_parameters['num_epochs']):
             print("=====================================================================")
             print("EPOCH ", epoch)
             # TRAINING
@@ -237,8 +195,7 @@ class TrainModel:
             running_loss = 0.0
             running_acc = 0
             i = 0
-            total_samples = len(self.train_loader)
-            print("Training")
+            running_point_cloud_vis = np.zeros((0, 5))
             for data in self.train_loader:
                 data.pos = data.pos.to(self.device)
                 data.y = torch.unsqueeze(data.y, 0).to(self.device)
@@ -253,106 +210,71 @@ class TrainModel:
                 _, preds = torch.max(outputs, 1)
                 running_loss += loss.detach().item()
                 running_acc += torch.sum(preds == data.y.data).item() / data.y.shape[1]
-                if i + 1 % 50 == 1:
-                    print("Train sample accuracy: ", np.around(running_acc / (i+1), 4), ", Loss: ", np.around(running_loss/(i+1), 4))
-                    save_file("../data/latest_prediction.las", np.hstack((data.pos.to('cpu').detach(),
-                                                                          data.y.T.to('cpu').detach(),
-                                                                          preds.T.to('cpu').detach())),
-                              headers_of_interest=['x', 'y', 'z', 'label', 'prediction'])
-                if i % 10 == 0:
-                    print('{:0.1f}'.format(i / total_samples * 100) + ' %')
+                running_point_cloud_vis = np.vstack((running_point_cloud_vis, np.hstack((data.pos + np.array([i * 7, 0, 0]), data.y.T, preds.T))))
 
+                if i % 2 == 0:
+                    print("Train sample accuracy: ", np.around(running_acc / (i+1), 4), ", Loss: ", np.around(running_loss/(i+1), 4))
+                    print(data.pos.shape, data.y.shape, preds.shape)
+                    save_file("../data/latest_prediction.las", running_point_cloud_vis, headers_of_interest=['x', 'y', 'z', 'label', 'prediction'])
                 i += 1
-            print("Saving model...")
-            torch.save(model.state_dict(), "../model/" + self.training_parameters['model_filename'])
-            print("Model saved.")
             epoch_loss = running_loss / len(self.train_loader)
             epoch_acc = running_acc / len(self.train_loader)
             self.update_log(epoch, epoch_loss, epoch_acc, val_epoch_loss, val_epoch_acc)
             print("Train epoch accuracy: ", np.around(epoch_acc, 4), ", Loss: ", np.around(epoch_loss, 4), "\n")
 
             # VALIDATION
-            print("Validation")
             model.eval()
             running_loss = 0.0
             running_acc = 0
             i = 0
-            total_samples = len(self.validation_loader)
-            with torch.no_grad():
-                for data in self.validation_loader:
-                    data.pos = data.pos.to(self.device)
-                    data.y = torch.unsqueeze(data.y, 0).to(self.device)
-                    outputs = model(data)
-                    loss = criterion(outputs, data.y)
-                    _, preds = torch.max(outputs, 1)
-                    running_loss += loss.detach().item()
-                    running_acc += torch.sum(preds == data.y.data).item() / data.y.shape[1]
-                    if i % 10 == 0:
-                        print('{:0.1f}'.format(i / total_samples * 100) + ' %')
-                    i += 1
-                val_epoch_loss = running_loss / len(self.validation_loader)
-                val_epoch_acc = running_acc / len(self.validation_loader)
-                self.update_log(epoch, epoch_loss, epoch_acc, val_epoch_loss, val_epoch_acc)
-                print("Validation epoch accuracy: ", np.around(val_epoch_acc, 4), ", Loss: ", np.around(val_epoch_loss, 4))
-                print("=====================================================================")
+            for data in self.validation_loader:
+                data.pos = data.pos.to(self.device)
+                data.y = torch.unsqueeze(data.y, 0).to(self.device)
 
-    @torch.no_grad()
+                outputs = model(data)
+                loss = criterion(outputs, data.y)
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                _, preds = torch.max(outputs, 1)
+                running_loss += loss.detach().item()
+                running_acc += torch.sum(preds == data.y.data).item() / data.y.shape[1]
+                if i % 2 == 0:
+                    print("Validation sample accuracy: ", np.around(running_acc / (i+1), 4), ", Loss: ", np.around(running_loss/(i+1), 4))
+
+                i += 1
+            val_epoch_loss = running_loss / len(self.train_loader)
+            val_epoch_acc = running_acc / len(self.train_loader)
+            self.update_log(epoch, epoch_loss, epoch_acc, val_epoch_loss, val_epoch_acc)
+            print("Validation epoch accuracy: ", np.around(val_epoch_acc, 4), ", Loss: ", np.around(val_epoch_loss, 4))
+            print("=====================================================================")
+            torch.save(model.state_dict(), "../model/" + self.training_parameters['model_filename'])
+
     def test_model(self):
-        model = Net(num_classes=4).to(self.device)
-
-        try:
-            model.load_state_dict(torch.load("../model/" + self.training_parameters['model_filename']),
-                                  strict=False)
-
-        except FileNotFoundError:
-            raise "Error: No model file found."
-
-        print("=====================================================================")
-        print("Testing Model...")
-        model = model.to(self.device)
-        criterion = nn.CrossEntropyLoss()
-        model.eval()
-        running_loss = 0.0
-        running_acc = 0
-        i = 0
-        total_samples = len(self.test_loader)
-        for data in self.test_loader:
-            data.pos = data.pos.to(self.device)
-            data.y = torch.unsqueeze(data.y, 0).to(self.device)
-            outputs = model(data)
-            loss = criterion(outputs, data.y)
-            _, preds = torch.max(outputs, 1)
-            running_loss += loss.detach().item()
-            running_acc += torch.sum(preds == data.y.data.detach()).item() / data.y.shape[1]
-            if i % 10 == 0:
-                print('{:0.1f}'.format(i / total_samples * 100) + ' %')
-            del loss, outputs, data.y, data.pos
-            i += 1
-
-        overall_test_loss = running_loss / len(self.test_loader)
-        overall_test_acc = running_acc / len(self.test_loader)
-        print("Test - Total accuracy: ", np.around(overall_test_acc, 4), "    - Total loss: ", np.around(overall_test_loss, 4))
-        print("=====================================================================")
+        pass
 
 
 if __name__ == '__main__':
-    parameters = dict(preprocess_train_datasets=1,  # turn on for first run to create the samples
-                      preprocess_validation_datasets=1,  # turn on for first run to create the samples
-                      preprocess_test_datasets=1,  # turn on for first run to create the samples
-                      clear_sample_dirs=1,  # if true, deletes sample_dirs when preprocessing is run.
-                      load_existing_model=1,  # leave on unless you want to create a new model. Don't forget to turn it back on or you will overwrite your model...
-                      num_epochs=2000,  # Number of epochs you want to train for. It saves every epoch, so you can stop it early.
-                      learning_rate=0.000025,  # The learning rate for the model. It needs to be quite low or the loss may "explode". If you see a large loss value (if it starts going into the 100s or higher), reduce this.
-                      model_filename='model2.pth',
+    parameters = dict(preprocess_train_datasets=1,
+                      preprocess_validation_datasets=1,
+                      preprocess_test_datasets=1,
+                      load_existing_model=1,
+                      num_epochs=2000,
+                      learning_rate=0.000025,
+                      fileset=None,
+                      input_point_cloud=None,
+                      model_filename='modelV2.pth',
                       box_dimensions=np.array([6, 6, 6]),
                       box_overlap=[0.5, 0.5, 0.5],
                       min_points_per_box=1000,
                       max_points_per_box=20000,
-                      num_procs=18,
-                      train_batch_size=6,
-                      validation_batch_size=18,
-                      test_batch_size=18,)
+                      subsample=False,
+                      subsampling_min_spacing=0.025,
+                      num_procs=4,
+                      batch_size=2,
+                      device='cpu')
 
     run_training = TrainModel(parameters)
-    run_training.run_training()  # Comment out to test the model.
-    # run_training.test_model()  # Uncomment to test the model.
+    run_training.run_training()
