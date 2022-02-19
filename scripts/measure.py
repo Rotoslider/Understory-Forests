@@ -106,9 +106,9 @@ class MeasureTree:
         xmax = np.ceil(np.max(self.terrain_points[:, 0]))
         ymax = np.ceil(np.max(self.terrain_points[:, 1]))
         x_points = np.linspace(xmin, xmax,
-                               int(np.ceil((xmax - xmin) / self.parameters['Vegetation_coverage_resolution'])) + 1)
+                               int(np.ceil((xmax - xmin) / self.parameters['vegetation_coverage_resolution'])) + 1)
         y_points = np.linspace(ymin, ymax,
-                               int(np.ceil((ymax - ymin) / self.parameters['Vegetation_coverage_resolution'])) + 1)
+                               int(np.ceil((ymax - ymin) / self.parameters['vegetation_coverage_resolution'])) + 1)
 
         convexhull = spatial.ConvexHull(self.DTM[:, :2])
         self.ground_area = 0  # unitless. Not in m2.
@@ -119,11 +119,11 @@ class MeasureTree:
             for y in y_points:
                 if self.inside_conv_hull(np.array([x, y]), convexhull):
                     indices = veg_kdtree.query_ball_point([x, y],
-                                                          r=self.parameters['Vegetation_coverage_resolution'], p=10)
+                                                          r=self.parameters['vegetation_coverage_resolution'], p=10)
                     ground_veg_indices = self.ground_veg_kdtree.query_ball_point([x, y], r=self.parameters[
-                        'Vegetation_coverage_resolution'], p=10)
+                        'vegetation_coverage_resolution'], p=10)
                     cwd_indices = cwd_kdtree.query_ball_point([x, y], r=self.parameters[
-                        'Vegetation_coverage_resolution'], p=10)
+                        'vegetation_coverage_resolution'], p=10)
                     self.ground_area += 1
                     if len(indices) > 5:
                         self.canopy_area += 1

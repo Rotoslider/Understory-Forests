@@ -14,6 +14,7 @@ other_parameters = dict(model_filename='model.pth',
                         cwd_class=3,  # Don't change
                         stem_class=4,  # Don't change
                         grid_resolution=0.5,  # Resolution of the DTM.
+                        vegetation_coverage_resolution=0.2,
                         num_neighbours=5,
                         sorting_search_angle=20,
                         sorting_search_radius=1,
