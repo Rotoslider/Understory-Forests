@@ -624,88 +624,88 @@ class MeasureTree:
             return False
 
     def run_measurement_extraction(self):
-        # skeleton_array = np.zeros((0, 3))
-        # cluster_array = np.zeros((0, 6))
-        # slice_heights = np.linspace(np.min(self.stem_points[:, 2]), np.max(self.stem_points[:, 2]), int(np.ceil(
-        #         (np.max(self.stem_points[:, 2]) - np.min(self.stem_points[:, 2])) / self.slice_increment)))
-        #
-        # print("Making and clustering slices...")
-        # i = 0
-        # max_i = slice_heights.shape[0]
-        # for slice_height in slice_heights:
-        #     if i % 10 == 0:
-        #         print('\r', i, '/', max_i, end='')
-        #     i += 1
-        #     new_slice = self.stem_points[np.logical_and(self.stem_points[:, 2] >= slice_height, self.stem_points[:, 2] < slice_height + self.slice_thickness)]
-        #     if new_slice.shape[0] > 0:
-        #         cluster, skel = MeasureTree.slice_clustering(new_slice, self.parameters['min_cluster_size'])
-        #         skeleton_array = np.vstack((skeleton_array, skel))
-        #         cluster_array = np.vstack((cluster_array, cluster))
-        # print('\r', max_i, '/', max_i, end='')
-        # print('\nDone\n')
-        #
-        # print('Clustering skeleton...')
-        # skeleton_array = cluster_dbscan(skeleton_array[:, :3], eps=self.slice_increment * 1.5)
-        # skeleton_cluster_visualisation = np.zeros((0, 5))
-        # for k in np.unique(skeleton_array[:, -1]):  # Just assigns random colours to the clusters to make it easier to see different neighbouring groups.
-        #     skeleton_cluster_visualisation = np.vstack((skeleton_cluster_visualisation, np.hstack((skeleton_array[skeleton_array[:, -1] == k], np.zeros((skeleton_array[skeleton_array[:, -1] == k].shape[0], 1)) + np.random.randint(0, 10)))))
-        #
-        # print("Saving skeleton and cluster array...")
-        # save_file(self.output_dir + 'skeleton_cluster_visualisation.las', skeleton_cluster_visualisation, ['X', 'Y', 'Z', 'cluster'])
-        #
-        # print("Making kdtree...")
-        # # Assign unassigned skeleton points to the nearest group.
-        # unassigned_bool = skeleton_array[:, -1] == -1
-        # kdtree = spatial.cKDTree(skeleton_array[unassigned_bool][:, :3], leafsize=100000)
-        # distances, neighbours = kdtree.query(skeleton_array[unassigned_bool, :3], k=2)
-        # skeleton_array[unassigned_bool, -1][distances[:, 1] < self.slice_increment * 3] = \
-        #     skeleton_array[unassigned_bool, -1][neighbours[:, 1]][distances[:, 1] < self.slice_increment * 3]
-        #
-        # input_data = []
-        # i = 0
-        # max_i = int(np.max(skeleton_array[:, -1]) + 1)
-        # cl_kdtree = spatial.cKDTree(cluster_array[:, 3:], leafsize=100000)
-        # cluster_ids = range(0, max_i)
-        # print('Making initial branch/stem section clusters...')
-        #
-        # # organised_clusters = np.zeros((0,5))
-        # for cluster_id in cluster_ids:
-        #     if i % 100 == 0:
-        #         print('\r', i, '/', max_i, end='')
-        #     i += 1
-        #     skel_cluster = skeleton_array[skeleton_array[:, -1] == cluster_id, :3]
-        #     sc_kdtree = spatial.cKDTree(skel_cluster, leafsize=100000)
-        #     results = np.unique(np.hstack(sc_kdtree.query_ball_tree(cl_kdtree,
-        #                                                             r=0.0001)))
-        #     cluster_array_clean = cluster_array[results, :3]
-        #     input_data.append([skel_cluster[:, :3], cluster_array_clean[:, :3], cluster_id, self.num_neighbours,
-        #                        self.cyl_dict])
-        #
-        # print('\r', max_i, '/', max_i, end='')
-        # print('\nDone\n')
-        #
-        # print("Starting multithreaded cylinder fitting... This can take a while.")
-        # j = 0
-        # max_j = len(input_data)
-        # outputlist = []
-        # with get_context("spawn").Pool(processes=self.num_procs) as pool:
-        #     for i in pool.imap_unordered(MeasureTree.threaded_cyl_fitting, input_data):
-        #         outputlist.append(i)
-        #         if j % 10 == 0:
-        #             print('\r', j, '/', max_j, end='')
-        #         j += 1
-        # full_cyl_array = np.vstack(outputlist)
-        # print('\r', max_j, '/', max_j, end='')
-        # print('\nDone\n')
-        #
-        # print("Deleting cyls with CCI less than:", self.parameters['minimum_CCI'])
-        # full_cyl_array = full_cyl_array[full_cyl_array[:, self.cyl_dict['CCI']] >= self.parameters['minimum_CCI']]
-        #
-        # # cyl_array = [x,y,z,nx,ny,nz,r,CCI,branch_id,tree_id,segment_volume,parent_branch_id]
-        # print("Saving cylinder array...")
-        # save_file(self.output_dir + 'full_cyl_array.las', full_cyl_array, headers_of_interest=list(self.cyl_dict))
-        full_cyl_array, _ = load_file(self.output_dir + 'full_cyl_array.las',
-                                      headers_of_interest=list(self.cyl_dict))
+        skeleton_array = np.zeros((0, 3))
+        cluster_array = np.zeros((0, 6))
+        slice_heights = np.linspace(np.min(self.stem_points[:, 2]), np.max(self.stem_points[:, 2]), int(np.ceil(
+                (np.max(self.stem_points[:, 2]) - np.min(self.stem_points[:, 2])) / self.slice_increment)))
+
+        print("Making and clustering slices...")
+        i = 0
+        max_i = slice_heights.shape[0]
+        for slice_height in slice_heights:
+            if i % 10 == 0:
+                print('\r', i, '/', max_i, end='')
+            i += 1
+            new_slice = self.stem_points[np.logical_and(self.stem_points[:, 2] >= slice_height, self.stem_points[:, 2] < slice_height + self.slice_thickness)]
+            if new_slice.shape[0] > 0:
+                cluster, skel = MeasureTree.slice_clustering(new_slice, self.parameters['min_cluster_size'])
+                skeleton_array = np.vstack((skeleton_array, skel))
+                cluster_array = np.vstack((cluster_array, cluster))
+        print('\r', max_i, '/', max_i, end='')
+        print('\nDone\n')
+
+        print('Clustering skeleton...')
+        skeleton_array = cluster_dbscan(skeleton_array[:, :3], eps=self.slice_increment * 1.5)
+        skeleton_cluster_visualisation = np.zeros((0, 5))
+        for k in np.unique(skeleton_array[:, -1]):  # Just assigns random colours to the clusters to make it easier to see different neighbouring groups.
+            skeleton_cluster_visualisation = np.vstack((skeleton_cluster_visualisation, np.hstack((skeleton_array[skeleton_array[:, -1] == k], np.zeros((skeleton_array[skeleton_array[:, -1] == k].shape[0], 1)) + np.random.randint(0, 10)))))
+
+        print("Saving skeleton and cluster array...")
+        save_file(self.output_dir + 'skeleton_cluster_visualisation.las', skeleton_cluster_visualisation, ['X', 'Y', 'Z', 'cluster'])
+
+        print("Making kdtree...")
+        # Assign unassigned skeleton points to the nearest group.
+        unassigned_bool = skeleton_array[:, -1] == -1
+        kdtree = spatial.cKDTree(skeleton_array[unassigned_bool][:, :3], leafsize=100000)
+        distances, neighbours = kdtree.query(skeleton_array[unassigned_bool, :3], k=2)
+        skeleton_array[unassigned_bool, -1][distances[:, 1] < self.slice_increment * 3] = \
+            skeleton_array[unassigned_bool, -1][neighbours[:, 1]][distances[:, 1] < self.slice_increment * 3]
+
+        input_data = []
+        i = 0
+        max_i = int(np.max(skeleton_array[:, -1]) + 1)
+        cl_kdtree = spatial.cKDTree(cluster_array[:, 3:], leafsize=100000)
+        cluster_ids = range(0, max_i)
+        print('Making initial branch/stem section clusters...')
+
+        # organised_clusters = np.zeros((0,5))
+        for cluster_id in cluster_ids:
+            if i % 100 == 0:
+                print('\r', i, '/', max_i, end='')
+            i += 1
+            skel_cluster = skeleton_array[skeleton_array[:, -1] == cluster_id, :3]
+            sc_kdtree = spatial.cKDTree(skel_cluster, leafsize=100000)
+            results = np.unique(np.hstack(sc_kdtree.query_ball_tree(cl_kdtree,
+                                                                    r=0.0001)))
+            cluster_array_clean = cluster_array[results, :3]
+            input_data.append([skel_cluster[:, :3], cluster_array_clean[:, :3], cluster_id, self.num_neighbours,
+                               self.cyl_dict])
+
+        print('\r', max_i, '/', max_i, end='')
+        print('\nDone\n')
+
+        print("Starting multithreaded cylinder fitting... This can take a while.")
+        j = 0
+        max_j = len(input_data)
+        outputlist = []
+        with get_context("spawn").Pool(processes=self.num_procs) as pool:
+            for i in pool.imap_unordered(MeasureTree.threaded_cyl_fitting, input_data):
+                outputlist.append(i)
+                if j % 10 == 0:
+                    print('\r', j, '/', max_j, end='')
+                j += 1
+        full_cyl_array = np.vstack(outputlist)
+        print('\r', max_j, '/', max_j, end='')
+        print('\nDone\n')
+
+        print("Deleting cyls with CCI less than:", self.parameters['minimum_CCI'])
+        full_cyl_array = full_cyl_array[full_cyl_array[:, self.cyl_dict['CCI']] >= self.parameters['minimum_CCI']]
+
+        # cyl_array = [x,y,z,nx,ny,nz,r,CCI,branch_id,tree_id,segment_volume,parent_branch_id]
+        print("Saving cylinder array...")
+        save_file(self.output_dir + 'full_cyl_array.las', full_cyl_array, headers_of_interest=list(self.cyl_dict))
+        # full_cyl_array, _ = load_file(self.output_dir + 'full_cyl_array.las',
+        #                               headers_of_interest=list(self.cyl_dict))
         if 1:
             print("Making full_cyl visualisation...")
             j = 0
