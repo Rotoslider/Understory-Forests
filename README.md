@@ -310,12 +310,26 @@ You can have multiple point clouds in the above directories, and during preproce
 
 ### Step 3 - Preprocessing the training data
 Set the parameters: ```preprocess_train_datasets```, ```preprocess_validation_datasets``` and ```preprocess_test_datasets``` to True (or 1).
-Run the ```train.py``` file and it will generate the samples for you.
-
-**WARNING** - Preprocessing will delete the contents of the sample directories when run, to avoid duplicating datasets.
+Run the ```train.py``` file and it will generate the samples for you. After running this the first time, set the above to False (or 0) to avoid preprocessing them again and duplicating them in the ```sample_dir``` directories.
 
 For each labelled point cloud you wish to use for training, you must slice it into a chunk for training (most of the point cloud), and a chunk for validation.
 Place the training chunk into the "data/train_dataset/" directory.
+
+
+**Note:** Preprocessing will add files to the respective ```sample_dir``` directory, but *does not yet delete them*. This is important if you re-run the preprocessing step.
+
+####Here is a simple scenario which should hopefully make this clearer:
+I have already preprocessed some point clouds located in the ```train_dataset``` directory. I have created another training dataset and wish to preprocess it so I can use it for training.
+
+I have 2 options:
+    Option A: move the already processed point clouds out of the ```train_dataset``` directory. Leave the ```sample_dir``` directory as it was. Add the new training point cloud into the train_dataset directory. Set the ```preprocess_train_datasets``` parameter to 1 and run the script. As you moved the previously processed point clouds out of the train_dataset directory, they will not be processed, and just the new point cloud will be pre-processed and added to the ```sample_dir``` directory. Set the ```preprocess_train_datasets``` parameter back to 0 and proceed as you wish.
+    
+    Option B: Leave your previously processed training point clouds in the ```train_dataset``` directory, add your new training point cloud to this directory also. Manually delete the contents of the ```sample_dir``` directory and re-run preprocessing for all of the training point clouds.
+    
+Options A and B achieve the same thing, but option A is more efficient, as you are not pre-processing everything from scratch again. Option B is likely necessary if you wish to remove a sample point cloud from the dataset.
+
+While most users of FSCT aren't likely to be training their own models, I plan to improve this process. Please see here for future work enhancements planned: https://github.com/SKrisanski/FSCT/issues/4
+ 
 
 ### Step 4 - Train the model
 You can either let the script continue on after the preprocessing step, or stop it, turn off the preprocessing modes and rerun.
