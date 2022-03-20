@@ -210,8 +210,7 @@ class TrainModel:
                 _, preds = torch.max(outputs, 1)
                 running_loss += loss.detach().item()
                 running_acc += torch.sum(preds == data.y.data).item() / data.y.shape[1]
-                running_point_cloud_vis = np.vstack((running_point_cloud_vis, np.hstack((data.pos + np.array([i * 7, 0, 0]), data.y.T, preds.T))))
-
+                running_point_cloud_vis = np.vstack((running_point_cloud_vis, np.hstack((data.pos.cpu() + np.array([i * 7, 0, 0]), data.y.cpu().T, preds.cpu().T))))
                 if i % 2 == 0:
                     print("Train sample accuracy: ", np.around(running_acc / (i+1), 4), ", Loss: ", np.around(running_loss/(i+1), 4))
                     print(data.pos.shape, data.y.shape, preds.shape)
