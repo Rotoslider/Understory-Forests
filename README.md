@@ -193,7 +193,7 @@ The "PlotId" is taken from the filename of the input point cloud, so name files 
 The number of samples in a batch used for the deep learning inference. This number depends on the amount of GPU memory you
 have. If you set this too high, you will run out of GPU memory. As a rough guide, I can fit 18-20 on an Nvidia Titan RTX GPU with 24 GB GPU
 RAM. 
-**Please Note: Until I add some nicer handling of this section, you must set batch_size >= 1**
+**Please Note: Until I add some nicer handling of this section, you must set batch_size>=2.**
 
 ```num_procs```
 The number of CPU cores you have/wish to use.
