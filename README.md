@@ -318,7 +318,7 @@ Place the training chunk into the "data/train_dataset/" directory.
 
 **Note:** Preprocessing will add files to the respective ```sample_dir``` directory, but *does not yet delete them*. This is important if you re-run the preprocessing step.
 
-####Here is a simple scenario which should hopefully make this clearer:
+#### Here is a simple scenario which should hopefully make this clearer:
 I have already preprocessed some point clouds located in the ```train_dataset``` directory. I have created another training dataset and wish to preprocess it so I can use it for training.
 
 I have 2 options:
