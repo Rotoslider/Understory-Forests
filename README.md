@@ -322,9 +322,9 @@ Place the training chunk into the "data/train_dataset/" directory.
 I have already preprocessed some point clouds located in the ```train_dataset``` directory. I have created another training dataset and wish to preprocess it so I can use it for training.
 
 I have 2 options:
-    Option A: move the already processed point clouds out of the ```train_dataset``` directory. Leave the ```sample_dir``` directory as it was. Add the new training point cloud into the train_dataset directory. Set the ```preprocess_train_datasets``` parameter to 1 and run the script. As you moved the previously processed point clouds out of the train_dataset directory, they will not be processed, and just the new point cloud will be pre-processed and added to the ```sample_dir``` directory. Set the ```preprocess_train_datasets``` parameter back to 0 and proceed as you wish.
+  Option A: move the already processed point clouds out of the ```train_dataset``` directory. Leave the ```sample_dir``` directory as it was. Add the new training point cloud into the train_dataset directory. Set the ```preprocess_train_datasets``` parameter to 1 and run the script. As you moved the previously processed point clouds out of the train_dataset directory, they will not be processed, and just the new point cloud will be pre-processed and added to the ```sample_dir``` directory. Set the ```preprocess_train_datasets``` parameter back to 0 and proceed as you wish.
     
-    Option B: Leave your previously processed training point clouds in the ```train_dataset``` directory, add your new training point cloud to this directory also. Manually delete the contents of the ```sample_dir``` directory and re-run preprocessing for all of the training point clouds.
+  Option B: Leave your previously processed training point clouds in the ```train_dataset``` directory, add your new training point cloud to this directory also. Manually delete the contents of the ```sample_dir``` directory and re-run preprocessing for all of the training point clouds.
     
 Options A and B achieve the same thing, but option A is more efficient, as you are not pre-processing everything from scratch again. Option B is likely necessary if you wish to remove a sample point cloud from the dataset.
 
