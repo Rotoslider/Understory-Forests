@@ -119,7 +119,15 @@ def load_file(
     output_headers = []
 
     if file_extension == ".las" or file_extension == ".laz":
-        inFile = laspy.read(filename)
+        try:
+            inFile = laspy.read(filename)
+        except FileNotFoundError:
+            print(filename, "not found.")
+            if return_num_points:
+                return np.zeros((0, 3)), None, 0
+            else:
+                return np.zeros((0, 3)), None
+
         header_names = list(inFile.point_format.dimension_names)
         pointcloud = np.vstack((inFile.x, inFile.y, inFile.z))
         if len(headers_of_interest) != 0:
@@ -144,6 +152,7 @@ def load_file(
         distances = np.linalg.norm(pointcloud[:, :2] - plot_centre, axis=1)
         keep_points = distances < plot_radius + plot_radius_buffer
         pointcloud = pointcloud[keep_points]
+
     if return_num_points:
         return pointcloud, coord_headers + output_headers, original_num_points
     else:
