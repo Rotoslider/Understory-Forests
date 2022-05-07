@@ -4,7 +4,7 @@ from torch_geometric.data import DataLoader
 import numpy as np
 import torch.optim as optim
 from model import Net
-from tools import load_file, save_file
+from tools import load_file, save_file, get_fsct_path
 from train_datasets import TrainingDataset, ValidationDataset
 import glob
 import random
@@ -65,9 +65,7 @@ class TrainModel:
                 self.preprocess_point_cloud(point_cloud, "../data/validation_dataset/sample_dir/")
 
     @staticmethod
-    def threaded_boxes(
-        point_cloud, box_size, min_points_per_box, max_points_per_box, path, id_offset, point_divisions
-    ):
+    def threaded_boxes(point_cloud, box_size, min_points_per_box, max_points_per_box, path, id_offset, point_divisions):
         box_size = np.array(box_size)
         box_centre_mins = point_divisions - 0.5 * box_size
         box_centre_maxes = point_divisions + 0.5 * box_size
@@ -134,13 +132,13 @@ class TrainModel:
         box_centres = np.vstack(np.meshgrid(x_vals, y_vals, z_vals)).reshape(3, -1).T
 
         point_divisions = []
-        for thread in range(self.training_parameters["num_procs"]):
+        for thread in range(self.training_parameters["num_cpu_cores"]):
             point_divisions.append([])
 
         points_to_assign = box_centres
 
         while points_to_assign.shape[0] > 0:
-            for i in range(self.training_parameters["num_procs"]):
+            for i in range(self.training_parameters["num_cpu_cores"]):
                 point_divisions[i].append(points_to_assign[0, :])
                 points_to_assign = points_to_assign[1:]
                 if points_to_assign.shape[0] == 0:
@@ -151,7 +149,7 @@ class TrainModel:
         if len(training_data_list) > 0:
             id_offset = np.max([int(os.path.basename(i).split(".")[0]) for i in training_data_list]) + 1
 
-        for thread in range(self.training_parameters["num_procs"]):
+        for thread in range(self.training_parameters["num_cpu_cores"]):
             for t in range(thread):
                 id_offset = id_offset + len(point_divisions[t])
             t = threading.Thread(
@@ -179,11 +177,14 @@ class TrainModel:
             (self.training_history, np.array([[epoch, epoch_loss, epoch_acc, val_epoch_loss, val_epoch_acc]]))
         )
         try:
-            np.savetxt("../model/training_history.csv", self.training_history)
+            np.savetxt(os.path.join(get_fsct_path("model"), "training_history.csv"), self.training_history)
         except PermissionError:
             print("training_history not saved this epoch, please close training_history.csv to enable saving.")
             try:
-                np.savetxt("../model/training_history_permission_error_backup.csv", self.training_history)
+                np.savetxt(
+                    os.path.join(get_fsct_path("model"), "training_history_permission_error_backup.csv"),
+                    self.training_history,
+                )
             except PermissionError:
                 pass
 
@@ -193,15 +194,19 @@ class TrainModel:
             print("Loading existing model...")
             try:
                 model.load_state_dict(
-                    torch.load("../model/" + self.training_parameters["model_filename"]), strict=False
+                    torch.load(os.path.join(get_fsct_path("model"), self.training_parameters["model_filename"])),
+                    strict=False,
                 )
 
             except FileNotFoundError:
                 print("File not found, creating new model...")
-                torch.save(model.state_dict(), "../model/" + self.training_parameters["model_filename"])
+                torch.save(
+                    model.state_dict(),
+                    os.path.join(get_fsct_path("model"), self.training_parameters["model_filename"]),
+                )
 
             try:
-                self.training_history = np.loadtxt("../model/training_history.csv")
+                self.training_history = np.loadtxt(os.path.join(get_fsct_path("model"), "training_history.csv"))
                 print("Loaded training history successfully.")
             except OSError:
                 pass
@@ -295,7 +300,10 @@ class TrainModel:
             self.update_log(epoch, epoch_loss, epoch_acc, val_epoch_loss, val_epoch_acc)
             print("Validation epoch accuracy: ", np.around(val_epoch_acc, 4), ", Loss: ", np.around(val_epoch_loss, 4))
             print("=====================================================================")
-            torch.save(model.state_dict(), "../model/" + self.training_parameters["model_filename"])
+            torch.save(
+                model.state_dict(),
+                os.path.join(get_fsct_path("model"), self.training_parameters["model_filename"]),
+            )
 
     def test_model(self):
         pass
@@ -318,7 +326,7 @@ if __name__ == "__main__":
         max_points_per_box=20000,
         subsample=False,
         subsampling_min_spacing=0.025,
-        num_procs=4,
+        num_cpu_cores=4,
         batch_size=2,
         device="cpu",
     )

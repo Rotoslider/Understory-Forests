@@ -24,7 +24,7 @@ class Preprocessing:
         self.box_overlap = np.array(self.parameters["box_overlap"])
         self.min_points_per_box = self.parameters["min_points_per_box"]
         self.max_points_per_box = self.parameters["max_points_per_box"]
-        self.num_procs = parameters["num_procs"]
+        self.num_cpu_cores = parameters["num_cpu_cores"]
 
         self.output_dir, self.working_dir = make_folder_structure(self.directory + self.filename)
 
@@ -46,7 +46,7 @@ class Preprocessing:
 
         if self.parameters["subsample"]:
             self.point_cloud = subsample_point_cloud(
-                self.point_cloud, self.parameters["subsampling_min_spacing"], self.num_procs
+                self.point_cloud, self.parameters["subsampling_min_spacing"], self.num_cpu_cores
             )
 
         self.num_points_subsampled = self.point_cloud.shape[0]
@@ -64,7 +64,7 @@ class Preprocessing:
                 self.point_cloud,
                 self.parameters["low_resolution_point_cloud_hack_mode"],
                 self.parameters["subsampling_min_spacing"],
-                self.parameters["num_procs"],
+                self.parameters["num_cpu_cores"],
             )
 
             save_file(self.output_dir + self.filename[:-4] + "_hack_mode_cloud.las", self.point_cloud)
@@ -72,9 +72,7 @@ class Preprocessing:
         self.point_cloud[:, :2] = self.point_cloud[:, :2] - self.parameters["plot_centre"]
 
     @staticmethod
-    def threaded_boxes(
-        point_cloud, box_size, min_points_per_box, max_points_per_box, path, id_offset, point_divisions
-    ):
+    def threaded_boxes(point_cloud, box_size, min_points_per_box, max_points_per_box, path, id_offset, point_divisions):
 
         box_centre_mins = point_divisions - 0.5 * box_size
         box_centre_maxes = point_divisions + 0.5 * box_size
@@ -136,20 +134,20 @@ class Preprocessing:
         box_centres = np.vstack(np.meshgrid(x_vals, y_vals, z_vals)).reshape(3, -1).T
 
         point_divisions = []
-        for thread in range(self.num_procs):
+        for thread in range(self.num_cpu_cores):
             point_divisions.append([])
 
         points_to_assign = box_centres
 
         while points_to_assign.shape[0] > 0:
-            for i in range(self.num_procs):
+            for i in range(self.num_cpu_cores):
                 point_divisions[i].append(points_to_assign[0, :])
                 points_to_assign = points_to_assign[1:]
                 if points_to_assign.shape[0] == 0:
                     break
         threads = []
         prev_id_offset = 0
-        for thread in range(self.num_procs):
+        for thread in range(self.num_cpu_cores):
             id_offset = 0
             for t in range(thread):
                 id_offset = id_offset + len(point_divisions[t])

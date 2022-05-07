@@ -18,7 +18,7 @@ if __name__ == "__main__":
             plot_radius=plot_radius,
             plot_radius_buffer=0,
             batch_size=18,
-            num_procs=18,
+            num_cpu_cores=0,
             use_CPU_only=False,
             # Optional settings - Generally leave as they are.
             slice_thickness=0.15,

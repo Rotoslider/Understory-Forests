@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from tools import get_fsct_path
 
 
 def training_plotter():
@@ -16,7 +17,7 @@ def training_plotter():
             ax1.set_ylabel("Loss")
             ax2.set_xlabel("Num. Epochs")
             ax2.set_ylabel("Accuracy")
-            training_history = np.loadtxt("../model/training_history.csv")
+            training_history = np.loadtxt(get_fsct_path("model") + "training_history.csv")
             plt.suptitle("Training History")
             if training_history.shape[0] > 1:
                 ax1.plot(training_history[:, 0], training_history[:, 1], c="green", label="train")

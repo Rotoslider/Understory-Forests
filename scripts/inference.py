@@ -11,6 +11,7 @@ from sklearn.neighbors import NearestNeighbors
 from scipy import spatial
 import os
 import time
+from tools import get_fsct_path
 from tools import load_file, save_file
 import shutil
 import sys
@@ -68,6 +69,7 @@ class SemanticSegmentation:
     def __init__(self, parameters):
         self.sem_seg_start_time = time.time()
         self.parameters = parameters
+
         if not self.parameters["use_CPU_only"]:
             print("Is CUDA available?", torch.cuda.is_available())
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -98,11 +100,17 @@ class SemanticSegmentation:
         model = Net(num_classes=4).to(self.device)
         if self.parameters["use_CPU_only"]:
             model.load_state_dict(
-                torch.load("../model/" + self.parameters["model_filename"], map_location=torch.device("cpu")),
+                torch.load(
+                    os.path.join(get_fsct_path("model"), self.parameters["model_filename"]),
+                    map_location=torch.device("cpu"),
+                ),
                 strict=False,
             )
         else:
-            model.load_state_dict(torch.load("../model/" + self.parameters["model_filename"]), strict=False)
+            model.load_state_dict(
+                torch.load(os.path.join(get_fsct_path("model"), self.parameters["model_filename"])),
+                strict=False,
+            )
 
         model.eval()
         num_boxes = test_dataset.__len__()

@@ -6,7 +6,7 @@ from report_writer import ReportWriter
 import glob
 import tkinter as tk
 import tkinter.filedialog as fd
-import glob
+import os
 
 
 def FSCT(
@@ -18,7 +18,11 @@ def FSCT(
     make_report=False,
     clean_up_files=False,
 ):
-    print(parameters["point_cloud_filename"])
+    print("Current point cloud being processed: ", parameters["point_cloud_filename"])
+    if parameters["num_cpu_cores"] == 0:
+        print("Using default number of CPU cores (all of them).")
+        parameters["num_cpu_cores"] = os.cpu_count()
+    print("Processing using ", parameters["num_cpu_cores"], "/", os.cpu_count(), " CPU cores.")
 
     if preprocess:
         preprocessing = Preprocessing(parameters)

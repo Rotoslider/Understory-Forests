@@ -17,6 +17,7 @@ from sklearn.linear_model import RANSACRegressor
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import make_pipeline
 from tools import (
+    get_fsct_path,
     load_file,
     save_file,
     low_resolution_hack_mode,
@@ -49,7 +50,7 @@ class MeasureTree:
         )
         self.filename = self.filename.split("/")[-1]
 
-        self.num_procs = parameters["num_procs"]
+        self.num_cpu_cores = parameters["num_cpu_cores"]
         self.num_neighbours = parameters["num_neighbours"]
         self.slice_thickness = parameters["slice_thickness"]
         self.slice_increment = parameters["slice_increment"]
@@ -70,7 +71,7 @@ class MeasureTree:
                 self.stem_points,
                 self.parameters["low_resolution_point_cloud_hack_mode"],
                 self.parameters["subsampling_min_spacing"],
-                self.parameters["num_procs"],
+                self.parameters["num_cpu_cores"],
             )
             save_file(self.output_dir + self.filename[:-4] + "_stem_points_hack_mode_cloud.las", self.stem_points)
 
@@ -122,7 +123,9 @@ class MeasureTree:
         self.character_viz = []
 
         for i in self.characters:
-            self.character_viz.append(np.genfromtxt("../tools/numbers/" + i + ".csv", delimiter=","))
+            self.character_viz.append(
+                np.genfromtxt(os.path.join(get_fsct_path("tools/numbers"), i + ".csv"), delimiter=",")
+            )
 
         self.cyl_dict = dict(
             x=0,
@@ -887,7 +890,7 @@ class MeasureTree:
         j = 0
         max_j = len(input_data)
         outputlist = []
-        with get_context("spawn").Pool(processes=self.num_procs) as pool:
+        with get_context("spawn").Pool(processes=self.num_cpu_cores) as pool:
             for i in pool.imap_unordered(MeasureTree.threaded_cyl_fitting, input_data):
                 outputlist.append(i)
                 if j % 10 == 0:
@@ -910,7 +913,7 @@ class MeasureTree:
             j = 0
             initial_cyl_vis = []
             max_j = np.shape(full_cyl_array)[0]
-            with get_context("spawn").Pool(processes=self.num_procs) as pool:
+            with get_context("spawn").Pool(processes=self.num_cpu_cores) as pool:
                 for i in pool.imap_unordered(self.make_cyl_visualisation, full_cyl_array):
                     initial_cyl_vis.append(i)
                     if j % 100 == 0:
@@ -921,9 +924,7 @@ class MeasureTree:
             print("\nDone\n")
 
             print("\nSaving cylinder visualisation...")
-            save_file(
-                self.output_dir + "initial_cyl_vis.las", initial_cyl_vis, headers_of_interest=list(self.cyl_dict)
-            )
+            save_file(self.output_dir + "initial_cyl_vis.las", initial_cyl_vis, headers_of_interest=list(self.cyl_dict))
         print("Sorting Cylinders...")
         full_cyl_array = self.cylinder_sorting(
             full_cyl_array,
@@ -989,9 +990,7 @@ class MeasureTree:
                         tree = np.vstack(
                             (
                                 tree,
-                                self.interpolate_cyl(
-                                    best_parent_point, highest_point, resolution=self.slice_increment
-                                ),
+                                self.interpolate_cyl(best_parent_point, highest_point, resolution=self.slice_increment),
                             )
                         )
                         tree[:, self.cyl_dict["tree_id"]] = best_parent_point[self.cyl_dict["tree_id"]]
@@ -1118,7 +1117,7 @@ class MeasureTree:
             j = 0
             interpolated_cyl_vis = []
             max_j = np.shape(interpolated_full_cyl_array)[0]
-            with get_context("spawn").Pool(processes=self.num_procs) as pool:
+            with get_context("spawn").Pool(processes=self.num_cpu_cores) as pool:
                 for i in pool.imap_unordered(self.make_cyl_visualisation, interpolated_full_cyl_array):
                     interpolated_cyl_vis.append(i)
                     if j % 100 == 0:
@@ -1172,7 +1171,7 @@ class MeasureTree:
             max_j = len(input_data)
 
             cleaned_cyls_list = []
-            with get_context("spawn").Pool(processes=self.num_procs) as pool:
+            with get_context("spawn").Pool(processes=self.num_cpu_cores) as pool:
                 for i in pool.imap_unordered(MeasureTree.cylinder_cleaning_multithreaded, input_data):
 
                     cleaned_cyls_list.append(i)
@@ -1220,9 +1219,7 @@ class MeasureTree:
 
             for tree_id in np.unique(cleaned_cyls[:, self.cyl_dict["tree_id"]]):
                 tree = cleaned_cyls[cleaned_cyls[:, self.cyl_dict["tree_id"]] == tree_id]
-                tree_vegetation = self.vegetation_points[
-                    self.vegetation_points[:, self.veg_dict["tree_id"]] == tree_id
-                ]
+                tree_vegetation = self.vegetation_points[self.vegetation_points[:, self.veg_dict["tree_id"]] == tree_id]
                 combined = np.vstack((tree[:, :3], tree_vegetation[:, :3]))
                 combined = np.hstack((combined, np.zeros((combined.shape[0], 1))))
                 combined = get_heights_above_DTM(combined, self.DTM)
@@ -1282,9 +1279,7 @@ class MeasureTree:
                 y_tree_base = tree[np.argmin(tree[:, 2]), 1]
                 mean_vegetation_density_in_5m_radius = 0
                 mean_understory_height_in_5m_radius = 0
-                nearby_understory_points = self.ground_veg[
-                    self.ground_veg_kdtree.query_ball_point([DBH_X, DBH_Y], r=5)
-                ]
+                nearby_understory_points = self.ground_veg[self.ground_veg_kdtree.query_ball_point([DBH_X, DBH_Y], r=5)]
 
                 if nearby_understory_points.shape[0] > 0:
                     mean_understory_height_in_5m_radius = np.around(
@@ -1472,7 +1467,7 @@ class MeasureTree:
                 j = 0
                 cleaned_cyl_vis = []
                 max_j = np.shape(cleaned_cylinders)[0]
-                with get_context("spawn").Pool(processes=self.num_procs) as pool:
+                with get_context("spawn").Pool(processes=self.num_cpu_cores) as pool:
                     for i in pool.imap_unordered(self.make_cyl_visualisation, cleaned_cylinders):
                         cleaned_cyl_vis.append(i)
                         if j % 100 == 0:

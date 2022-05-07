@@ -15,6 +15,14 @@ from multiprocessing import get_context
 from scipy import spatial
 
 
+def get_fsct_path(location_in_fsct=""):
+    root_directory = os.path.dirname(os.path.abspath("README.md"))
+    if location_in_fsct == "root":
+        return root_directory
+    else:
+        return os.path.join(root_directory, location_in_fsct)
+
+
 def make_folder_structure(filename):
     filename = filename.replace("\\", "/")
     directory = os.path.dirname(os.path.realpath(filename)) + "/"
@@ -53,12 +61,12 @@ def subsample(args):
     return X_keep
 
 
-def subsample_point_cloud(pointcloud, min_spacing, num_procs=1):
+def subsample_point_cloud(pointcloud, min_spacing, num_cpu_cores=1):
     """
     Args:
         pointcloud: The input point cloud.
         min_spacing: The minimum allowable distance between two points in the point cloud.
-        num_procs: Number of threads to use when subsampling.
+        num_cpu_cores: Number of threads to use when subsampling.
 
     Returns:
         pointcloud: The subsampled point cloud.
@@ -66,8 +74,8 @@ def subsample_point_cloud(pointcloud, min_spacing, num_procs=1):
     print("Subsampling...")
     print("Original number of points:", pointcloud.shape[0])
 
-    if num_procs > 1:
-        num_slices = num_procs
+    if num_cpu_cores > 1:
+        num_slices = num_cpu_cores
         Xmin = np.min(pointcloud[:, 0])
         Xmax = np.max(pointcloud[:, 0])
         Xrange = Xmax - Xmin
@@ -82,7 +90,7 @@ def subsample_point_cloud(pointcloud, min_spacing, num_procs=1):
             slice_list.append([pc_slice, min_spacing])
 
         pointcloud = np.zeros((0, pointcloud.shape[1]))
-        with get_context("spawn").Pool(processes=num_procs) as pool:
+        with get_context("spawn").Pool(processes=num_cpu_cores) as pool:
             for i in pool.imap_unordered(subsample, slice_list):
                 pointcloud = np.vstack((pointcloud, i))
 
@@ -185,9 +193,7 @@ def save_file(filename, pointcloud, headers_of_interest=None, silent=False):
 
 def get_heights_above_DTM(points, DTM):
     print("Getting heights above DTM...")
-    grid = griddata(
-        (DTM[:, 0], DTM[:, 1]), DTM[:, 2], points[:, 0:2], method="linear", fill_value=np.median(DTM[:, 2])
-    )
+    grid = griddata((DTM[:, 0], DTM[:, 1]), DTM[:, 2], points[:, 0:2], method="linear", fill_value=np.median(DTM[:, 2]))
     points[:, -1] = points[:, 2] - grid
     return points
 
@@ -219,7 +225,7 @@ def clustering(points, eps=0.05, min_samples=2, n_jobs=1, mode="DBSCAN"):
         return np.hstack((points, np.atleast_2d(db.labels_).T))
 
 
-def low_resolution_hack_mode(point_cloud, num_iterations, min_spacing, num_procs):
+def low_resolution_hack_mode(point_cloud, num_iterations, min_spacing, num_cpu_cores):
     print("Using low resolution point cloud hack mode...")
     print("Original point cloud shape:", point_cloud.shape)
     point_cloud_original = deepcopy(point_cloud)
@@ -234,7 +240,7 @@ def low_resolution_hack_mode(point_cloud, num_iterations, min_spacing, num_procs
             )
         )
         point_cloud = np.vstack((point_cloud, duplicated))
-        point_cloud = subsample_point_cloud(point_cloud, min_spacing, num_procs)
+        point_cloud = subsample_point_cloud(point_cloud, min_spacing, num_cpu_cores)
     print("Hacked point cloud shape:", point_cloud.shape)
     return point_cloud
 

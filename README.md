@@ -195,8 +195,8 @@ have. If you set this too high, you will run out of GPU memory. As a rough guide
 RAM. 
 **Please Note: Until I add some nicer handling of this section, you must set batch_size>=2.**
 
-```num_procs```
-The number of CPU cores you have/wish to use.
+```num_cpu_cores```
+The number of CPU cores you have/wish to use. Set to 0 by default, which means using ALL cores.
 
 ### Optional settings - Generally leave as they are.
 

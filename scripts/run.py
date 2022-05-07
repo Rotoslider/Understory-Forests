@@ -1,7 +1,6 @@
 from run_tools import FSCT, directory_mode, file_mode
 from other_parameters import other_parameters
 
-
 if __name__ == "__main__":
     """Choose one of the following or modify as needed.
     Directory mode will find all .las files within a directory and sub directories but will ignore any .las files in
@@ -27,7 +26,7 @@ if __name__ == "__main__":
             plot_radius_buffer=0,  # See README. If non-zero, this is used for "Tree Aware Plot Cropping Mode".
             # Set these appropriately for your hardware.
             batch_size=18,  # If you get CUDA errors, try lowering this. This is suitable for 24 GB of vRAM.
-            num_procs=18,  # Number of CPU cores you want to use. If you run out of RAM, lower this.
+            num_cpu_cores=0,  # Number of CPU cores you want to use. If you run out of RAM, lower this. 0 means ALL cores.
             use_CPU_only=False,  # Set to True if you do not have an Nvidia GPU, or if you don't have enough vRAM.
             # Optional settings - Generally leave as they are.
             slice_thickness=0.15,  # If your point cloud resolution is a bit low (and only if the stem segmentation is still reasonably accurate), try increasing this to 0.2.
