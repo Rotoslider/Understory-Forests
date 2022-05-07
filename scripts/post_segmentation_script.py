@@ -24,6 +24,7 @@ import os
 from sklearn.neighbors import NearestNeighbors
 from tools import load_file, save_file, subsample_point_cloud, get_heights_above_DTM, cluster_dbscan
 from scipy.interpolate import griddata
+from fsct_exceptions import DataQualityError
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
@@ -108,7 +109,12 @@ class PostProcessing:
         self.terrain_points = self.point_cloud[
             self.point_cloud[:, self.label_index] == self.terrain_class_label
         ]  # -2 is now the class label as we added the height above DTM column.
-        self.DTM = self.make_DTM(crop_dtm=True)
+
+        try:
+            self.DTM = self.make_DTM(crop_dtm=True)
+        except ValueError:
+            raise DataQualityError("Failed to make DTM. \nThere probably aren't any terrain_points.")
+
         save_file(self.output_dir + "DTM.las", self.DTM)
 
         self.convexhull = spatial.ConvexHull(self.DTM[:, :2])
