@@ -2,3 +2,8 @@
 "*.las"
 !"example.las"
 model/training_history.csv
+.vscode
+scripts/__pycache__
+venv
+.idea
+docker
