@@ -29,6 +29,7 @@ from tools import (
     subsample,
     get_taper,
 )
+from fsct_exceptions import DataQualityError
 import time
 import hdbscan
 from skspatial.objects import Plane
@@ -829,7 +830,10 @@ class MeasureTree:
         print("\nDone\n")
 
         print("Clustering skeleton...")
-        skeleton_array = cluster_dbscan(skeleton_array[:, :3], eps=self.slice_increment * 1.5)
+        try:
+            skeleton_array = cluster_dbscan(skeleton_array[:, :3], eps=self.slice_increment * 1.5)
+        except ValueError:
+            raise DataQualityError("Failed to cluster tree skeletons.")
         skeleton_cluster_visualisation = np.zeros((0, 5))
         for k in np.unique(
             skeleton_array[:, -1]
