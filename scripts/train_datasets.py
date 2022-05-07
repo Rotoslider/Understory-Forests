@@ -9,7 +9,7 @@ from sklearn.neighbors import NearestNeighbors
 class TrainingDataset(Dataset):
     def __init__(self, root_dir, points_per_box, device):
         super().__init__()
-        self.filenames = glob.glob(root_dir + '*.npy')
+        self.filenames = glob.glob(root_dir + "*.npy")
         self.points_per_box = points_per_box
         self.label_index = 3
         self.device = device
@@ -22,10 +22,10 @@ class TrainingDataset(Dataset):
         if point_cloud.shape[0] > self.points_per_box:
             shuffle_index = list(range(point_cloud.shape[0]))
             random.shuffle(shuffle_index)
-            point_cloud = point_cloud[shuffle_index[:self.points_per_box]]
+            point_cloud = point_cloud[shuffle_index[: self.points_per_box]]
 
         x = point_cloud[:, :3]
-        y = point_cloud[:, self.label_index] -1
+        y = point_cloud[:, self.label_index] - 1
         x, y = augmentations(x, y)
         if np.all(y != 0):
             y[y == 2] = 3  # if no ground is present, CWD is relabelled as stem.
@@ -43,7 +43,7 @@ class TrainingDataset(Dataset):
 class ValidationDataset(Dataset):
     def __init__(self, root_dir, points_per_box, device):
         super().__init__()
-        self.filenames = glob.glob(root_dir + '*.npy')
+        self.filenames = glob.glob(root_dir + "*.npy")
         self.points_per_box = points_per_box
         self.label_index = 3
         self.device = device
@@ -73,17 +73,29 @@ def augmentations(x, y):
         rotations[1] = np.radians(rotations[1])
         rotations[2] = np.radians(rotations[2])
 
-        roll_mat = np.array([[1, 0, 0],
-                             [0, np.cos(rotations[0]), -np.sin(rotations[0])],
-                             [0, np.sin(rotations[0]), np.cos(rotations[0])]])
+        roll_mat = np.array(
+            [
+                [1, 0, 0],
+                [0, np.cos(rotations[0]), -np.sin(rotations[0])],
+                [0, np.sin(rotations[0]), np.cos(rotations[0])],
+            ]
+        )
 
-        pitch_mat = np.array([[np.cos(rotations[1]), 0, np.sin(rotations[1])],
-                              [0, 1, 0],
-                              [-np.sin(rotations[1]), 0, np.cos(rotations[1])]])
+        pitch_mat = np.array(
+            [
+                [np.cos(rotations[1]), 0, np.sin(rotations[1])],
+                [0, 1, 0],
+                [-np.sin(rotations[1]), 0, np.cos(rotations[1])],
+            ]
+        )
 
-        yaw_mat = np.array([[np.cos(rotations[2]), -np.sin(rotations[2]), 0],
-                            [np.sin(rotations[2]), np.cos(rotations[2]), 0],
-                            [0, 0, 1]])
+        yaw_mat = np.array(
+            [
+                [np.cos(rotations[2]), -np.sin(rotations[2]), 0],
+                [np.sin(rotations[2]), np.cos(rotations[2]), 0],
+                [0, 0, 1],
+            ]
+        )
 
         points[:, :3] = np.matmul(np.matmul(np.matmul(points[:, :3], roll_mat), pitch_mat), yaw_mat)
         return points
@@ -93,7 +105,7 @@ def augmentations(x, y):
         return points
 
     def random_point_removal(x, y):
-        idx = np.arange(int(np.shape(x)[0]*0.5), np.shape(x)[0])
+        idx = np.arange(int(np.shape(x)[0] * 0.5), np.shape(x)[0])
         keep_idx = np.random.choice(idx)
         xnew = x[:keep_idx, :]
         ynew = y[:keep_idx]
@@ -109,7 +121,9 @@ def augmentations(x, y):
             points = points + np.random.normal(0, random_noise_std_dev, size=(np.shape(points)[0], 3))
         return points
 
-    if np.all(y != 0) and np.all(y != 2):  # if no terrain or CWD are present, it's ok to rotate extremely. Terrain shouldn't be above stems or CWD.
+    if np.all(y != 0) and np.all(
+        y != 2
+    ):  # if no terrain or CWD are present, it's ok to rotate extremely. Terrain shouldn't be above stems or CWD.
         rotations = [np.random.uniform(-90, 90), np.random.uniform(-90, 90), np.random.uniform(-180, 180)]
     else:
         rotations = [np.random.uniform(-25, 25), np.random.uniform(-25, 25), np.random.uniform(-180, 180)]
@@ -127,7 +141,7 @@ def augmentations(x, y):
 
 def subsample_point_cloud(x, y, min_spacing):
     x = np.hstack((x, np.atleast_2d(y).T))
-    neighbours = NearestNeighbors(n_neighbors=2, algorithm='kd_tree', metric='euclidean').fit(x[:, :3])
+    neighbours = NearestNeighbors(n_neighbors=2, algorithm="kd_tree", metric="euclidean").fit(x[:, :3])
     distances, indices = neighbours.kneighbors(x[:, :3])
     x_keep = x[distances[:, 1] >= min_spacing]
     i1 = [distances[:, 1] < min_spacing][0]
@@ -135,11 +149,10 @@ def subsample_point_cloud(x, y, min_spacing):
     x_check = x[np.logical_and(i1, i2)]
 
     while np.shape(x_check)[0] > 1:
-        neighbours = NearestNeighbors(n_neighbors=2, algorithm='kd_tree', metric='euclidean').fit(x_check[:, :3])
+        neighbours = NearestNeighbors(n_neighbors=2, algorithm="kd_tree", metric="euclidean").fit(x_check[:, :3])
         distances, indices = neighbours.kneighbors(x_check[:, :3])
         x_keep = np.vstack((x_keep, x_check[distances[:, 1] >= min_spacing, :]))
         i1 = [distances[:, 1] < min_spacing][0]
         i2 = [x_check[indices[:, 0], 2] < x_check[indices[:, 1], 2]][0]
         x_check = x_check[np.logical_and(i1, i2)]
     return x_keep[:, :3], x_keep[:, 3]
-
