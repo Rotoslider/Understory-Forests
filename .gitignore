@@ -1,9 +1,9 @@
-"*.npy"
-"*.las"
-!"example.las"
+*.npy
+*.las
+!example.las
 model/training_history.csv
-.vscode
 scripts/__pycache__
+.vscode
 venv
 .idea
 docker

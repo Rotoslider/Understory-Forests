@@ -69,6 +69,7 @@ class Preprocessing:
 
             save_file(self.output_dir + self.filename[:-4] + "_hack_mode_cloud.las", self.point_cloud)
 
+        # Global shift the point cloud to avoid loss of precision during segmentation.
         self.point_cloud[:, :2] = self.point_cloud[:, :2] - self.parameters["plot_centre"]
 
     @staticmethod
