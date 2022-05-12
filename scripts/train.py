@@ -350,8 +350,8 @@ class TrainModel:
                         )
 
                     i += 1
-                val_epoch_loss = running_loss / len(self.train_loader)
-                val_epoch_acc = running_acc / len(self.train_loader)
+                val_epoch_loss = running_loss / len(self.validation_loader)
+                val_epoch_acc = running_acc / len(self.validation_loader)
                 self.update_log(epoch, epoch_loss, epoch_acc, val_epoch_loss, val_epoch_acc)
                 print(
                     "Validation epoch accuracy: ", np.around(val_epoch_acc, 4), ", Loss: ", np.around(val_epoch_loss, 4)
