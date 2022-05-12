@@ -194,7 +194,7 @@ class MeasureTree:
             )
             self.cwd_points = np.hstack((self.cwd_points, np.zeros((self.cwd_points.shape[0], 1))))
         except FileNotFoundError:
-            self.cwd_points = np.zeros((0, self.vegetation_points.shape[1]))
+            self.cwd_points = np.zeros((0, 9))
 
         cwd_kdtree = spatial.cKDTree(self.cwd_points[:, :2], leafsize=10000)
 
