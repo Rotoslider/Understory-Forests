@@ -192,9 +192,13 @@ class MeasureTree:
                 self.output_dir + "cwd_points.las",
                 headers_of_interest=["x", "y", "z", "red", "green", "blue", "label", "height_above_DTM"],
             )
-            self.cwd_points = np.hstack((self.cwd_points, np.zeros((self.cwd_points.shape[0], 1))))
+            if self.cwd_points.shape[1] < self.stem_points.shape[1]:
+                self.cwd_points = np.hstack(
+                    (self.cwd_points, np.zeros((self.cwd_points.shape[0], self.stem_points.shape[1] - self.cwd_points.shape[1])))
+                )
+
         except FileNotFoundError:
-            self.cwd_points = np.zeros((0, 9))
+            self.cwd_points = np.zeros((0, self.stem_points.shape[1]))
 
         cwd_kdtree = spatial.cKDTree(self.cwd_points[:, :2], leafsize=10000)
 
