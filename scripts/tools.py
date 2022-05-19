@@ -1,3 +1,4 @@
+from multiprocessing.dummy import current_process
 from sklearn.neighbors import NearestNeighbors
 import numpy as np
 import glob
@@ -16,11 +17,11 @@ from scipy import spatial
 
 
 def get_fsct_path(location_in_fsct=""):
-    root_directory = os.path.dirname(os.path.abspath("README.md"))
-    if location_in_fsct == "root":
-        return root_directory
-    else:
-        return os.path.join(root_directory, location_in_fsct)
+    current_working_dir = os.getcwd()
+    output_path = current_working_dir[: current_working_dir.index("FSCT") + 4]
+    if len(location_in_fsct) > 0:
+        output_path = os.path.join(output_path, location_in_fsct)
+    return output_path.replace("\\", "/")
 
 
 def make_folder_structure(filename):
