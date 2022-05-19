@@ -322,6 +322,7 @@ class TrainModel:
 
             # VALIDATION
             print("Validation")
+
             if self.parameters["perform_validation_during_training"]:
                 model.eval()
                 running_loss = 0.0
@@ -333,10 +334,6 @@ class TrainModel:
 
                     outputs = model(data)
                     loss = criterion(outputs, data.y)
-
-                    optimizer.zero_grad()
-                    loss.backward()
-                    optimizer.step()
 
                     _, preds = torch.max(outputs, 1)
                     running_loss += loss.detach().item()
@@ -369,7 +366,7 @@ if __name__ == "__main__":
         preprocess_validation_datasets=1,
         clean_sample_directories=1,  # Deletes all samples in the sample directories.
         perform_validation_during_training=1,
-        generate_point_cloud_vis=1,  # Useful for visually checking how well the model is learning. Saves a set of samples called "latest_prediction.las" in the "FSCT/data/"" directory. Samples have label and prediction values.
+        generate_point_cloud_vis=0,  # Useful for visually checking how well the model is learning. Saves a set of samples called "latest_prediction.las" in the "FSCT/data/"" directory. Samples have label and prediction values.
         load_existing_model=1,
         num_epochs=2000,
         learning_rate=0.000025,
