@@ -606,7 +606,7 @@ class MeasureTree:
 
         if skeleton_points.shape[0] <= num_neighbours:
             group = skeleton_points
-            line_centre = np.mean([np.min(group[:, :3], axis=0), np.min(group[:, :3], axis=0)], axis=0)
+            line_centre = np.mean([np.min(group[:, :3], axis=0), np.max(group[:, :3], axis=0)], axis=0)
             length = np.linalg.norm(np.max(group, axis=0) - np.min(group, axis=0))
             plane_slice = point_cloud[
                 np.linalg.norm(abs(line_v_hat * (point_cloud - line_centre)), axis=1) < (length / 2)
