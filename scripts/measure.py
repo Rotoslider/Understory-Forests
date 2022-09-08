@@ -194,7 +194,10 @@ class MeasureTree:
             )
             if self.cwd_points.shape[1] < self.stem_points.shape[1]:
                 self.cwd_points = np.hstack(
-                    (self.cwd_points, np.zeros((self.cwd_points.shape[0], self.stem_points.shape[1] - self.cwd_points.shape[1])))
+                    (
+                        self.cwd_points,
+                        np.zeros((self.cwd_points.shape[0], self.stem_points.shape[1] - self.cwd_points.shape[1])),
+                    )
                 )
 
         except FileNotFoundError:
@@ -1157,6 +1160,15 @@ class MeasureTree:
         input_data = []
         i = 0
         tree_id_list = np.unique(interpolated_full_cyl_array[:, self.cyl_dict["tree_id"]])
+        taper_meas_height_max = self.parameters["taper_measurement_height_max"]
+        taper_meas_height_min = self.parameters["taper_measurement_height_min"]
+        taper_meas_height_increment = self.parameters["taper_measurement_height_increment"]
+        self.taper_measurement_heights = np.arange(
+            np.floor(taper_meas_height_min * taper_meas_height_increment) / taper_meas_height_increment,
+            (np.floor(taper_meas_height_max * taper_meas_height_increment) / taper_meas_height_increment)
+            + taper_meas_height_increment,
+            taper_meas_height_increment,
+        )
         taper_array = np.zeros((0, self.taper_measurement_heights.shape[0] + 5))
 
         if tree_id_list.shape[0] > 0:
@@ -1215,15 +1227,6 @@ class MeasureTree:
             self.stem_points = self.stem_points[mask]
             results = results[1][mask]
             self.stem_points[:, self.stem_dict["tree_id"]] = cleaned_cyls[results, self.cyl_dict["tree_id"]]
-            taper_meas_height_max = self.parameters["taper_measurement_height_max"]
-            taper_meas_height_min = self.parameters["taper_measurement_height_min"]
-            taper_meas_height_increment = self.parameters["taper_measurement_height_increment"]
-            self.taper_measurement_heights = np.arange(
-                np.floor(taper_meas_height_min * taper_meas_height_increment) / taper_meas_height_increment,
-                (np.floor(taper_meas_height_max * taper_meas_height_increment) / taper_meas_height_increment)
-                + taper_meas_height_increment,
-                taper_meas_height_increment,
-            )
 
             for tree_id in np.unique(cleaned_cyls[:, self.cyl_dict["tree_id"]]):
                 tree = cleaned_cyls[cleaned_cyls[:, self.cyl_dict["tree_id"]] == tree_id]
