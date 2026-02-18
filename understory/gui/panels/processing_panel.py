@@ -1471,6 +1471,13 @@ class ProcessingPanel(QWidget):
                 else:
                     return  # User cancelled save dialog
 
+        # Clear any stale run-specific output path before building config
+        # so _build_config() doesn't carry over a previous run's directory
+        if self._last_save_path and self._output_dir.text().strip():
+            # Check if it's a run-specific auto path (contains /runs/)
+            if "/runs/" in self._output_dir.text():
+                self._output_dir.clear()
+
         config = self._build_config()
 
         # Use prepared (subsampled/cropped) cloud as pipeline input when available
@@ -1487,7 +1494,8 @@ class ProcessingPanel(QWidget):
                 run_dir = project_paths.create_run()
                 run_output = str(ProjectPaths.run_output_dir(run_dir))
                 config.output.output_directory = run_output
-                self._output_dir.setText(run_output)
+                # Don't set _output_dir text — it's for user overrides only.
+                # The auto-generated run path is transient per run.
                 # Save a config snapshot for this run
                 config.save(str(run_dir / "run_config.yaml"))
                 self._log(f"Run folder: {run_dir.name}")
@@ -1559,12 +1567,20 @@ class ProcessingPanel(QWidget):
         self._progress_container.setVisible(False)
         self._log(f"Pipeline complete! Output: {output_dir}")
 
-        # Refresh run selector and auto-select the completed run
+        # Refresh run selector and auto-select the completed run.
+        # Use resolved paths for comparison since FSCTPaths resolves them.
         self._populate_runs()
+        resolved = str(Path(output_dir).resolve())
+        matched = False
         for i in range(self._run_combo.count()):
-            if self._run_combo.itemData(i) == output_dir:
+            combo_path = str(Path(self._run_combo.itemData(i)).resolve())
+            if combo_path == resolved:
                 self._run_combo.setCurrentIndex(i)
+                matched = True
                 break
+        if not matched and self._run_combo.count() > 0:
+            # Fallback: select the newest run (index 0)
+            self._run_combo.setCurrentIndex(0)
 
         self._populate_results(output_dir)
         self.pipeline_finished.emit(output_dir)
