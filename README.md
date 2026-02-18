@@ -20,6 +20,11 @@ Built on top of the FSCT pipeline by Sean Krisanski, Understory provides a full 
 - Multiple color modes: RGB, Height, Classification (semantic labels), and Tree ID
 - Click-to-focus point picking
 - Interactive draggable plot circle in 3D for setting plot centre and radius
+- Screenshot export (Ctrl+Shift+E) — save the current view as PNG, JPEG, or TIFF at 2x resolution
+- Classification legend with labeled color swatches (Terrain, Vegetation, CWD, Stem)
+- Cross-section slicing — horizontal or vertical slice through the point cloud for inspecting internal structure
+- Measurement tools — click two points to measure 3D distance or vertical height difference
+- Point cloud comparison — load a second cloud and visualize nearest-neighbor distances with a diverging colormap
 
 ### Point Cloud Preparation
 
@@ -28,6 +33,7 @@ Built on top of the FSCT pipeline by Sean Krisanski, Understory provides a full 
 - **Voxel-grid subsampling** — Reduce point density before processing (configurable spacing)
 - **Plot circle visualization** — See and drag the plot boundary in 3D before running the pipeline
 - **Save prepared cloud** — Export modified point cloud as .las for future use
+- **Undo/Redo** — 5-level undo history (Ctrl+Z / Ctrl+Shift+Z) for axis swap, crop, and subsample operations
 
 ### Processing Pipeline
 
@@ -40,6 +46,8 @@ Runs all FSCT stages with real-time progress tracking and error translation:
 5. **Report Generation** — Branded HTML report with automatic PDF export
 
 Each stage can be enabled/disabled independently. The pipeline runs in a background thread so the GUI stays responsive.
+
+The pipeline supports **cooperative cancellation** — clicking Stop signals a safe shutdown at the next stage boundary rather than hard-killing the worker thread. A **dual progress bar** shows both overall pipeline progress and current stage progress, with sub-stage tracking during semantic segmentation.
 
 ### Tree-Aware Plot Cropping
 
@@ -54,6 +62,9 @@ The status bar shows real-time GPU utilization and memory usage during pipeline 
 - **YAML-based project files** — All settings saved in a single `project.yaml` with sensible defaults
 - **Timestamped run folders** — Each pipeline run creates a `runs/run_YYYY-MM-DD_HH-MM-SS/` folder preserving its output, report, and config snapshot
 - **Prepared cloud tracking** — Projects remember whether a prepared (subsampled/cropped) cloud should be used for processing
+- **Recent projects** — File > Recent Projects shows up to 10 recently opened files/projects
+- **Drag-and-drop** — Drop .las, .laz, .pcd, or .yaml files directly onto the main window to open them
+- **Field photo attachment** — Attach site photos to the project; photos appear in the HTML report
 
 Project folder structure:
 ```
@@ -69,7 +80,7 @@ MyProject/
       ...
 ```
 
-### Run Comparison
+### Run History
 
 The Results tab includes a **Pipeline Run History** selector showing all previous runs for the current project. Selecting a run refreshes the output layer checkboxes, tree measurement table, and report buttons so you can browse and compare results from different pipeline runs or parameter settings.
 
@@ -91,6 +102,10 @@ Pipeline runs generate a branded HTML report with the Understory green theme, in
 - **Distribution histograms** — DBH, height, Volume 1, Volume 2
 - **Processing details** — Per-stage timing in minutes and seconds
 - **Notes** — User-provided project notes
+- **Stand metrics** — Basal area (m²/ha), Quadratic Mean Diameter, Lorey's Mean Height, Stand Density Index
+- **Taper profile charts** — Diameter vs height curves for each measured tree
+- **Crown projection map** — Bird's-eye view of crown positions and sizes overlaid on DTM contours
+- **Field photos** — Site photos attached to the project, displayed as a thumbnail grid
 
 Reports are saved to the run's `reports/` folder. The output/ folder contains only pipeline data files (.las, .csv).
 
@@ -129,6 +144,30 @@ Clicking a tree row in the measurements table highlights that tree in the viewer
 ### Tree Data Export
 
 Tree measurement data can be exported as CSV from the Results tab. The save dialog defaults to the run's reports folder for organized output.
+
+### Batch Processing
+
+Process multiple point clouds in one go. Open **Tools > Batch Processing**, add files, and run them all using the current pipeline settings. Each file gets its own run folder. GPU memory is automatically cleaned between runs.
+
+### Run Comparison Report
+
+Compare results from two pipeline runs with **Tools > Compare Runs**. The comparison report shows per-tree deltas for DBH, height, and volume, identifies newly detected or missing trees, and generates a standalone HTML report with change tables and delta histograms.
+
+### Growth Dashboard
+
+Track tree growth over time with **Tools > Growth Dashboard**. Select trees from the registry to see DBH and height plotted across multiple scans. Export growth data as CSV for external analysis.
+
+### Allometric Equations
+
+Apply biomass and carbon equations to your tree data with **Tools > Allometric Equations**. Understory includes default generic AGB and carbon equations and lets you define custom formulas using any column from tree_data.csv. Equations are evaluated against all trees with results displayed in a table and exportable as CSV.
+
+### GIS Export
+
+Export tree locations and attributes for use in GIS software. The **Export to GIS** button in the Results tab writes GeoJSON (no extra dependencies) or Shapefile (requires geopandas). Each tree is a Point feature with all measurements as attributes. Specify a CRS string for georeferenced output.
+
+### Flythrough Animation
+
+Create camera flythrough animations with **View > Flythrough Editor**. Capture keyframe positions from the current 3D view, then render a smooth camera path using cubic spline interpolation. Export as an image sequence, GIF, or MP4 (MP4 requires imageio-ffmpeg).
 
 ### Training Workflow
 
@@ -260,6 +299,10 @@ python -m understory
 | Shift+F5 | Stop pipeline |
 | Home | Reset camera |
 | Ctrl+1/2/3/4 | Top/Front/Right/Isometric view |
+| Ctrl+Shift+E | Export screenshot |
+| Ctrl+Z | Undo (Prepare tab) |
+| Ctrl+Shift+Z | Redo (Prepare tab) |
+| Escape | Cancel measurement |
 | Ctrl+Q | Exit |
 
 **Label Editor:**
@@ -340,15 +383,18 @@ FSCT/
 ├── understory/              # Understory GUI package
 │   ├── __main__.py          # Entry point (python -m understory)
 │   ├── core/                # Pipeline, paths, reports, tree registry
-│   │   ├── pipeline.py      # Pipeline runner with progress callbacks
+│   │   ├── pipeline.py      # Pipeline runner with cooperative cancellation
 │   │   ├── paths.py         # Project and output path management
 │   │   ├── report.py        # Jinja2 HTML report + PDF export
-│   │   └── tree_registry.py # Persistent tree ID matching
+│   │   ├── tree_registry.py # Persistent tree ID matching
+│   │   ├── comparison.py    # Multi-run comparison reports
+│   │   ├── allometry.py     # Allometric equation evaluation
+│   │   └── gis_export.py    # GeoJSON and Shapefile export
 │   ├── config/              # Dataclass-based configuration
 │   │   └── settings.py      # ProjectConfig with YAML serialization
 │   ├── gui/                 # PySide6 interface
 │   │   ├── main_window.py   # Main window, menus, GPU monitor
-│   │   ├── panels/          # Sidebar panels (processing, training)
+│   │   ├── panels/          # Sidebar panels (processing, training, batch, growth, allometry)
 │   │   └── viewer/          # 3D point cloud viewer, label editor
 │   └── resources/           # Icons, QSS stylesheets, report template
 ├── scripts/                 # Original FSCT pipeline

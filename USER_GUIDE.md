@@ -32,6 +32,8 @@ The program opens with:
 - A **3D viewer** on the right where you see your point cloud
 - A **status bar** at the bottom showing progress and GPU information
 
+**Tip:** You can also open files by dragging them from your file manager and dropping them directly onto the Understory window. Point cloud files (.las, .laz, .pcd) are loaded into the viewer. Project files (.yaml) are opened as projects.
+
 ---
 
 ## The Project Tab
@@ -78,6 +80,20 @@ By default, the program creates the project folder next to your input file. You 
 - **Ctrl+S** — Save the current project (creates a `project.yaml` file)
 - **Ctrl+Shift+S** — Save the project to a new location
 - **Ctrl+Shift+O** — Open an existing project
+
+### Recent Projects
+
+The program remembers the last 10 files and projects you opened. Find them under **File > Recent Projects** in the menu bar. This saves you from browsing for the same file again.
+
+### Attaching Field Photos
+
+You can attach photos from the field to your project. Click **Attach Photos** in the Project tab and select one or more image files. The photos are:
+
+- Copied into the project folder so they stay with your data
+- Shown as thumbnails in the Project tab
+- Included in the HTML report under a "Field Photos" section
+
+This is useful for documenting site conditions, marking specific trees, or recording any visual observations.
 
 ### Project Folder Structure
 
@@ -151,6 +167,15 @@ After fixing orientation, cropping outliers, and/or subsampling, click **Save Po
 - You can reload the cleaned file next time without repeating these steps
 - The pipeline will use the prepared cloud instead of the original
 - You have a backup of your cleaned data
+
+### Undo and Redo
+
+If you make a mistake while preparing your point cloud — for example, you swap the wrong axis or crop too aggressively — you can undo the last operation:
+
+- **Ctrl+Z** — Undo the last preparation step
+- **Ctrl+Shift+Z** — Redo (bring it back)
+
+The program keeps up to 5 undo steps. This works for axis swaps, outlier cropping, and subsampling.
 
 ---
 
@@ -456,10 +481,11 @@ Deletes non-essential output files, keeping only the tree data CSVs and the repo
 
 ### During Processing
 
-- The **progress bar** shows which stage is running and how far along it is
+- The **dual progress bar** shows two things at once: a thin dark bar on top for overall pipeline progress, and a larger bar below for the current stage. You can see the stage name and overall percentage at a glance
+- During semantic segmentation, the progress bar updates batch-by-batch so you can track inference progress
 - The **console log** at the bottom shows detailed messages from each stage
 - The **status bar** shows GPU memory and utilization in real time
-- You can click **Stop** to cancel (or press **Shift+F5**)
+- You can click **Stop** to safely cancel the pipeline (or press **Shift+F5**). The program finishes the current operation cleanly rather than force-stopping, so no data is corrupted
 
 ### Processing Times
 
@@ -571,6 +597,55 @@ The CSV file is saved to the run's `reports/` folder by default.
 
 **Eye-Dome Lighting (EDL):** Turn this on in the toolbar for better depth perception. It makes shapes easier to see in the point cloud. Highly recommended when checking results.
 
+### Screenshot Export
+
+To save what you see in the 3D viewer as an image:
+
+1. Set up the view you want (rotate, zoom, pick a color mode)
+2. Go to **View > Export Screenshot** (or press **Ctrl+Shift+E**)
+3. Choose where to save it and pick a format (PNG, JPEG, or TIFF)
+
+The image is saved at 2x resolution for sharp, high-quality output.
+
+### Classification Legend
+
+When you switch to **Classification** color mode, a legend appears in the viewer showing what each color means:
+
+| Color | Class |
+|-------|-------|
+| Brown | Terrain |
+| Green | Vegetation |
+| Gold | CWD (Coarse Woody Debris) |
+| Red | Stem |
+
+This makes it easy to read the display without memorizing the color scheme.
+
+### Cross-Section Slice
+
+The cross-section tool lets you "slice" through the point cloud to see what's inside — useful for inspecting trunk structure, checking terrain detection, or looking at individual tree layers.
+
+To use it:
+
+1. Find the slice controls in the viewer toolbar
+2. Set the **Mode** to Horizontal (cuts by height) or Vertical (cuts by position)
+3. Adjust the **Position** slider to move the slice through the cloud
+4. Change the **Thickness** to show a thicker or thinner slice
+
+This is purely visual — it hides points temporarily but does not delete or modify anything. Set Mode back to "Off" to see the full cloud again.
+
+### Measurement Tools
+
+You can measure distances directly in the 3D viewer:
+
+1. Go to **Tools > Measure Distance** (for 3D straight-line distance) or **Tools > Measure Height** (for vertical height difference)
+2. Click a point in the cloud — this sets the first endpoint
+3. Click a second point — a line appears with the measurement value
+
+**Tips:**
+- Press **Escape** to cancel a measurement in progress
+- Go to **Tools > Clear Measurements** to remove all measurement lines from the view
+- Multiple measurements can be active at the same time
+
 ---
 
 ## Common Workflows
@@ -599,6 +674,100 @@ For each plot:
 4. Export tree data and report
 
 Each project keeps its own folder with all results organized by run.
+
+---
+
+## Analysis Tools
+
+Understory includes several analysis tools for working with your results beyond the basic pipeline. Find them in the **Tools** menu.
+
+### Batch Processing
+
+If you have several point cloud files to process with the same settings:
+
+1. Go to **Tools > Batch Processing**
+2. Click **Add Files** to select multiple point cloud files
+3. Click **Run** — each file is processed using your current pipeline settings
+4. Progress is shown per-file with status icons
+
+The program cleans up GPU memory between files automatically. Each file gets its own run folder.
+
+### Comparing Runs
+
+To compare results from two different pipeline runs (for example, before and after changing settings, or scans from different dates):
+
+1. Go to **Tools > Compare Runs**
+2. Select the two run folders to compare
+3. Click **Compare** — a comparison report is generated
+
+The report shows:
+- Which trees changed in DBH, height, or volume
+- Which trees are new (detected in one run but not the other)
+- Delta histograms and summary statistics
+
+### Growth Dashboard
+
+If you scan the same plot multiple times (for example, once per year), you can track how individual trees grow:
+
+1. Go to **Tools > Growth Dashboard**
+2. Select one or more trees from the list
+3. Charts show DBH and height over time for each selected tree
+
+You can export the growth data as a CSV file for further analysis in a spreadsheet.
+
+### Allometric Equations
+
+Allometric equations let you estimate things like above-ground biomass (AGB) and carbon content from your tree measurements:
+
+1. Go to **Tools > Allometric Equations**
+2. The program comes with default equations for generic AGB and carbon
+3. You can add your own equations using column names from the tree data (like DBH and Height)
+4. Results are calculated for all trees and shown in a table
+5. Export results as CSV
+
+This is useful for carbon accounting, forest inventory reporting, and research.
+
+### GIS Export
+
+To use your tree data in GIS software (like QGIS or ArcGIS):
+
+1. Go to the **Results tab** and click **Export to GIS**
+2. Choose a format:
+   - **GeoJSON** — Works everywhere, no extra software needed
+   - **Shapefile** — Traditional GIS format (requires the geopandas Python package)
+3. Enter a CRS (Coordinate Reference System) string if your data is georeferenced
+4. Each tree is saved as a point with all its measurements as attributes
+
+### Point Cloud Comparison
+
+To compare two point clouds visually (for example, two scans of the same plot from different dates):
+
+1. Go to **Tools > Compare Point Clouds**
+2. Select a second point cloud file
+3. Points are colored by their distance to the nearest point in the other cloud
+   - Blue = close (little change)
+   - Red = far (big change)
+4. Statistics (mean, max, standard deviation) are shown
+
+This is a quick visual check for structural changes between scans.
+
+### Flythrough Animation
+
+Create a smooth camera animation through your point cloud:
+
+1. Go to **View > Flythrough Editor**
+2. Position the camera where you want the animation to start
+3. Click **Add Keyframe** to capture that position
+4. Move the camera to the next position and add another keyframe
+5. Repeat for as many keyframes as you want
+6. Click **Render** to generate the animation
+
+Export options:
+- **Image sequence** — One image per frame (always available)
+- **GIF** — Animated image
+- **MP4** — Video file (requires the imageio-ffmpeg package)
+
+The camera follows a smooth curved path between keyframes using spline interpolation.
 
 ---
 
@@ -650,6 +819,17 @@ If you changed a setting and can't remember what the original value was, **right
 | Reset a setting | Right-click the setting → Reset to Default |
 | Reset camera view | Home key |
 | Change colour mode | Viewer toolbar → RGB / Height / Class / TreeID |
+| Take a screenshot | View → Export Screenshot (or Ctrl+Shift+E) |
+| Undo preparation step | Ctrl+Z (in Prepare tab) |
+| Measure distance | Tools → Measure Distance → click two points |
+| Compare point clouds | Tools → Compare Point Clouds |
+| Batch process files | Tools → Batch Processing |
+| Compare two runs | Tools → Compare Runs |
+| Track tree growth | Tools → Growth Dashboard |
+| Calculate biomass | Tools → Allometric Equations |
+| Export for GIS | Results tab → Export to GIS |
+| Attach field photos | Project tab → Attach Photos |
+| Create flythrough | View → Flythrough Editor |
 
 ---
 
@@ -671,3 +851,7 @@ If you changed a setting and can't remember what the original value was, **right
 | Ctrl+3 | Right side view |
 | Ctrl+4 | Isometric (3D angle) view |
 | Ctrl+Q | Close the program |
+| Ctrl+Shift+E | Save a screenshot of the 3D view |
+| Ctrl+Z | Undo last preparation step (Prepare tab) |
+| Ctrl+Shift+Z | Redo last preparation step (Prepare tab) |
+| Escape | Cancel a measurement in progress |
