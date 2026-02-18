@@ -34,12 +34,17 @@ class PostProcessing:
         self.post_processing_time_start = time.time()
         self.parameters = parameters
         self.filename = self.parameters["point_cloud_filename"].replace("\\", "/")
-        self.output_dir = (
-            os.path.dirname(os.path.realpath(self.filename)).replace("\\", "/")
-            + "/"
-            + self.filename.split("/")[-1][:-4]
-            + "_FSCT_output/"
-        )
+        if self.parameters.get("output_dir"):
+            self.output_dir = self.parameters["output_dir"]
+            if not self.output_dir.endswith("/"):
+                self.output_dir += "/"
+        else:
+            self.output_dir = (
+                os.path.dirname(os.path.realpath(self.filename)).replace("\\", "/")
+                + "/"
+                + self.filename.split("/")[-1][:-4]
+                + "_FSCT_output/"
+            )
         self.filename = self.filename.split("/")[-1]
 
         self.noise_class_label = parameters["noise_class"]
@@ -49,7 +54,7 @@ class PostProcessing:
         self.stem_class_label = parameters["stem_class"]
         print("Loading segmented point cloud...")
         self.point_cloud, self.headers_of_interest = load_file(
-            self.output_dir + "segmented.las", headers_of_interest=["x", "y", "z", "red", "green", "blue", "label"]
+            self.output_dir + "segmented.las", headers_of_interest=["x", "y", "z", "red", "green", "blue", "label", "confidence"]
         )
         self.point_cloud = np.hstack(
             (self.point_cloud, np.zeros((self.point_cloud.shape[0], 1)))
@@ -94,7 +99,7 @@ class PostProcessing:
                     grid_points = np.vstack((grid_points, np.array([[x, y, z]])))
 
         if self.parameters["plot_radius"] > 0:
-            plot_centre = [[float(self.plot_summary["Plot Centre X"]), float(self.plot_summary["Plot Centre Y"])]]
+            plot_centre = [[float(self.plot_summary["Plot Centre X"].iloc[0]), float(self.plot_summary["Plot Centre Y"].iloc[0])]]
             crop_radius = self.parameters["plot_radius"] + self.parameters["plot_radius_buffer"]
             grid_points = grid_points[np.linalg.norm(grid_points[:, :2] - plot_centre, axis=1) <= crop_radius]
 

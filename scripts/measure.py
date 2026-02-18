@@ -43,7 +43,12 @@ class MeasureTree:
         self.measure_time_start = time.time()
         self.parameters = parameters
         self.filename = self.parameters["point_cloud_filename"].replace("\\", "/")
-        self.output_dir = os.path.dirname(os.path.realpath(self.filename)).replace("\\", "/") + "/" + self.filename.split("/")[-1][:-4] + "_FSCT_output/"
+        if self.parameters.get("output_dir"):
+            self.output_dir = self.parameters["output_dir"]
+            if not self.output_dir.endswith("/"):
+                self.output_dir += "/"
+        else:
+            self.output_dir = os.path.dirname(os.path.realpath(self.filename)).replace("\\", "/") + "/" + self.filename.split("/")[-1][:-4] + "_FSCT_output/"
         self.filename = self.filename.split("/")[-1]
 
         self.num_cpu_cores = parameters["num_cpu_cores"]
@@ -377,11 +382,11 @@ class MeasureTree:
         ]  # ignore all points with radius of 0.
         unsorted_points = cylinder_array
 
-        sorted_points = np.zeros((0, unsorted_points.shape[1]))
+        sorted_points_list = []
         total_points = len(unsorted_points)
         while unsorted_points.shape[0] > 1:
-            if sorted_points.shape[0] % 200 == 0:
-                print("\r", np.around(sorted_points.shape[0] / total_points, 3), end="")
+            if len(sorted_points_list) % 200 == 0:
+                print("\r", np.around(len(sorted_points_list) / total_points, 3), end="")
 
             current_point_index = np.argmin(unsorted_points[:, 2])
             current_point = unsorted_points[current_point_index]
@@ -389,17 +394,15 @@ class MeasureTree:
                 current_point[self.cyl_dict["tree_id"]] = max_tree_label
                 max_tree_label += 1
 
-            sorted_points = np.vstack((sorted_points, current_point))
-            unsorted_points = np.vstack(
-                (unsorted_points[:current_point_index], unsorted_points[current_point_index + 1 :])
-            )
+            sorted_points_list.append(current_point.copy())
+            unsorted_points = np.delete(unsorted_points, current_point_index, axis=0)
             kdtree = spatial.cKDTree(unsorted_points[:, :3], leafsize=1000)
             results = kdtree.query_ball_point(np.atleast_2d(current_point)[:, :3], r=distance_tolerance)[0]
             unsorted_points[results] = criteria_check(
                 current_point, unsorted_points[results], angle_tolerance, search_angle
             )
         print("1.000\n")
-        return sorted_points
+        return np.vstack(sorted_points_list) if sorted_points_list else np.zeros((0, cylinder_array.shape[1]))
 
     @classmethod
     def make_cyl_visualisation(cls, cyl):
@@ -423,13 +426,12 @@ class MeasureTree:
     def create_3d_circles_as_points_flat(cls, x, y, z, r, circle_points=15):
         """Creates a point cloud representation of a horizontal circle at coordinates x, y, z. and of radius r.
         Circle points is the number of points to use to represent each circle."""
-        angle_between_points = np.linspace(0, 2 * np.pi, circle_points)
-        points = np.zeros((0, 3))
-        for i in angle_between_points:
-            x2 = r * np.cos(i) + x
-            y2 = r * np.sin(i) + y
-            point = np.array([[x2, y2, z]])
-            points = np.vstack((points, point))
+        angles = np.linspace(0, 2 * np.pi, circle_points)
+        points = np.column_stack((
+            r * np.cos(angles) + x,
+            r * np.sin(angles) + y,
+            np.full(circle_points, z),
+        ))
         return points
 
     @classmethod
@@ -492,8 +494,8 @@ class MeasureTree:
                 residual_threshold=0.05,
                 max_trials=10000,
             )
-            xc, yc = model_robust.params[0:2]
-            r = model_robust.params[2]
+            xc, yc = model_robust.center
+            r = model_robust.radius
             CCI = MeasureTree.circumferential_completeness_index([xc, yc], r, P_xy[:, :2])
 
         if CCI < 0.3:
@@ -543,16 +545,11 @@ class MeasureTree:
 
         def convert_character_cells_to_points(character):
             character = np.rot90(character, axes=(1, 0))
-            index_i = 0
-            index_j = 0
-            points = np.zeros((0, 3))
-            for i in character:
-                for j in i:
-                    if j == 1:
-                        points = np.vstack((points, np.array([[index_i, index_j, 0]])))
-                    index_j += 1
-                index_j = 0
-                index_i += 1
+            indices = np.argwhere(character == 1)
+            if indices.shape[0] == 0:
+                points = np.zeros((0, 3))
+            else:
+                points = np.column_stack((indices[:, 0].astype(float), indices[:, 1].astype(float), np.zeros(indices.shape[0])))
 
             roll_mat = np.array(
                 [[1, 0, 0], [0, np.cos(-np.pi / 4), -np.sin(-np.pi / 4)], [0, np.sin(-np.pi / 4), np.cos(-np.pi / 4)]]
@@ -599,7 +596,7 @@ class MeasureTree:
         """
         point_cloud = point_cloud[:, :3]
         skeleton_points = skeleton_points[:, :3]
-        cyl_array = np.zeros((0, 14))
+        cyl_list = []
         line_centre = np.mean(skeleton_points[:, :3], axis=0)
         _, _, vh = np.linalg.svd(line_centre - skeleton_points)
         line_v_hat = vh[0] / np.linalg.norm(vh[0])
@@ -613,7 +610,7 @@ class MeasureTree:
             ]  # calculate distances to plane at centre of line.
             if plane_slice.shape[0] > 0:
                 cylinder = MeasureTree.fit_circle_3D(plane_slice, line_v_hat)
-                cyl_array = np.vstack((cyl_array, cylinder))
+                cyl_list.append(cylinder)
         else:
             while skeleton_points.shape[0] > num_neighbours:
                 nn = NearestNeighbors()
@@ -627,9 +624,9 @@ class MeasureTree:
                 ]  # calculate distances to plane at centre of line.
                 if plane_slice.shape[0] > 0:
                     cylinder = MeasureTree.fit_circle_3D(plane_slice, line_v_hat)
-                    cyl_array = np.vstack((cyl_array, cylinder))
+                    cyl_list.append(cylinder)
                 skeleton_points = np.delete(skeleton_points, np.argmin(skeleton_points[:, 2]), axis=0)
-        return cyl_array
+        return np.vstack(cyl_list) if cyl_list else np.zeros((0, 14))
 
     @classmethod
     def cylinder_cleaning_multithreaded(cls, args):
@@ -653,7 +650,7 @@ class MeasureTree:
         Use the mean of the z coords of all neighbours for the cleaned cylinder z coord.
         """
         sorted_cylinders, cleaned_measurement_radius, cyl_dict = args
-        cleaned_cyls = np.zeros((0, np.shape(sorted_cylinders)[1]))
+        cleaned_cyls_list = []
 
         tree = BallTree(sorted_cylinders[:, :3])
         _, ind = tree.query(sorted_cylinders[:, :3], k=10)
@@ -687,8 +684,9 @@ class MeasureTree:
                     best_cylinder[cyl_dict["radius"]] = np.max(
                         neighbours[neighbours[:, cyl_dict["CCI"]] >= percentile_thresh, cyl_dict["radius"]], axis=0
                     )
-            cleaned_cyls = np.vstack((cleaned_cyls, best_cylinder))
+            cleaned_cyls_list.append(best_cylinder.copy())
             sorted_cylinders = np.delete(sorted_cylinders, results, axis=0)
+        cleaned_cyls = np.vstack(cleaned_cyls_list) if cleaned_cyls_list else np.zeros((0, np.shape(sorted_cylinders)[1]))
         volume_cyls = deepcopy(cleaned_cyls)
         volume = 0
 
@@ -768,18 +766,20 @@ class MeasureTree:
     @classmethod
     def slice_clustering(cls, new_slice, min_cluster_size):
         """Helper function for clustering stem slices and extracting the skeletons of these stems."""
-        cluster_array_internal = np.zeros((0, 6))
-        medians = np.zeros((0, 3))
+        medians_list = []
+        cluster_list = []
 
         if new_slice.shape[0] > 1:
             new_slice = cluster_hdbscan(new_slice[:, :3], min_cluster_size)
             for cluster_id in range(0, int(np.max(new_slice[:, -1])) + 1):
                 cluster = new_slice[new_slice[:, -1] == cluster_id]
                 median = np.median(cluster[:, :3], axis=0)
-                medians = np.vstack((medians, median))
-                cluster_array_internal = np.vstack(
-                    (cluster_array_internal, np.hstack((cluster[:, :3], np.zeros((cluster.shape[0], 3)) + median)))
+                medians_list.append(median)
+                cluster_list.append(
+                    np.hstack((cluster[:, :3], np.zeros((cluster.shape[0], 3)) + median))
                 )
+        cluster_array_internal = np.vstack(cluster_list) if cluster_list else np.zeros((0, 6))
+        medians = np.vstack(medians_list) if medians_list else np.zeros((0, 3))
         return cluster_array_internal, medians
 
     @classmethod
@@ -805,8 +805,6 @@ class MeasureTree:
             return False
 
     def run_measurement_extraction(self):
-        skeleton_array = np.zeros((0, 3))
-        cluster_array = np.zeros((0, 6))
         slice_heights = np.linspace(
             np.min(self.stem_points[:, 2]),
             np.max(self.stem_points[:, 2]),
@@ -816,6 +814,8 @@ class MeasureTree:
         print("Making and clustering slices...")
         i = 0
         max_i = slice_heights.shape[0]
+        skeleton_list = []
+        cluster_list = []
         for slice_height in slice_heights:
             if i % 10 == 0:
                 print("\r", i, "/", max_i, end="")
@@ -828,8 +828,10 @@ class MeasureTree:
             ]
             if new_slice.shape[0] > 0:
                 cluster, skel = MeasureTree.slice_clustering(new_slice, self.parameters["min_cluster_size"])
-                skeleton_array = np.vstack((skeleton_array, skel))
-                cluster_array = np.vstack((cluster_array, cluster))
+                skeleton_list.append(skel)
+                cluster_list.append(cluster)
+        skeleton_array = np.vstack(skeleton_list) if skeleton_list else np.zeros((0, 3))
+        cluster_array = np.vstack(cluster_list) if cluster_list else np.zeros((0, 6))
         print("\r", max_i, "/", max_i, end="")
         print("\nDone\n")
 
@@ -838,22 +840,15 @@ class MeasureTree:
             skeleton_array = cluster_dbscan(skeleton_array[:, :3], eps=self.slice_increment * 1.5)
         except ValueError:
             raise DataQualityError("Failed to cluster tree skeletons.")
-        skeleton_cluster_visualisation = np.zeros((0, 5))
+        skel_vis_list = []
         for k in np.unique(
             skeleton_array[:, -1]
         ):  # Just assigns random colours to the clusters to make it easier to see different neighbouring groups.
-            skeleton_cluster_visualisation = np.vstack(
-                (
-                    skeleton_cluster_visualisation,
-                    np.hstack(
-                        (
-                            skeleton_array[skeleton_array[:, -1] == k],
-                            np.zeros((skeleton_array[skeleton_array[:, -1] == k].shape[0], 1))
-                            + np.random.randint(0, 10),
-                        )
-                    ),
-                )
+            cluster_pts = skeleton_array[skeleton_array[:, -1] == k]
+            skel_vis_list.append(
+                np.hstack((cluster_pts, np.zeros((cluster_pts.shape[0], 1)) + np.random.randint(0, 10)))
             )
+        skeleton_cluster_visualisation = np.vstack(skel_vis_list) if skel_vis_list else np.zeros((0, 5))
 
         print("Saving skeleton and cluster array...")
         save_file(
@@ -1021,14 +1016,14 @@ class MeasureTree:
         print("Cylinder interpolation...")
 
         tree_list = []
-        interpolated_full_cyl_array = np.zeros((0, 14))
+        interp_parts = []  # collect all parts, vstack once after loop
         max_tree_id = np.unique(sorted_full_cyl_array[:, self.cyl_dict["tree_id"]]).shape[0]
         for tree_id in np.unique(sorted_full_cyl_array[:, self.cyl_dict["tree_id"]]):
             if int(tree_id) % 10 == 0:
                 print("Tree ID", int(tree_id), "/", int(max_tree_id))
             current_tree = sorted_full_cyl_array[sorted_full_cyl_array[:, self.cyl_dict["tree_id"]] == tree_id]
             if current_tree.shape[0] >= self.parameters["min_tree_cyls"]:
-                interpolated_full_cyl_array = np.vstack((interpolated_full_cyl_array, current_tree))
+                interp_parts.append(current_tree)
                 _, individual_branches_indices = np.unique(
                     current_tree[:, self.cyl_dict["branch_id"]], return_index=True
                 )
@@ -1058,9 +1053,7 @@ class MeasureTree:
                                         interp_to_point, lowest_point, resolution=self.slice_increment
                                     )
                                     current_branch = np.vstack((current_branch, interpolated_cyls))
-                                    interpolated_full_cyl_array = np.vstack(
-                                        (interpolated_full_cyl_array, interpolated_cyls)
-                                    )
+                                    interp_parts.append(interpolated_cyls)
 
                     if parent_branch.shape[0] > 0:
                         parent_centre = np.mean(parent_branch[:, :3])
@@ -1081,14 +1074,11 @@ class MeasureTree:
                             if angles.shape[0] > 0:
                                 best_parent_point = parent_points_in_range[np.argmin(angles)]
                                 # Interpolates from lowest point of current branch to smallest angle parent point.
-                                interpolated_full_cyl_array = np.vstack(
-                                    (
-                                        interpolated_full_cyl_array,
-                                        self.interpolate_cyl(
-                                            lowest_point_of_current_branch,
-                                            best_parent_point,
-                                            resolution=self.slice_increment,
-                                        ),
+                                interp_parts.append(
+                                    self.interpolate_cyl(
+                                        lowest_point_of_current_branch,
+                                        best_parent_point,
+                                        resolution=self.slice_increment,
                                     )
                                 )
                 current_tree = get_heights_above_DTM(current_tree, self.DTM)
@@ -1100,7 +1090,8 @@ class MeasureTree:
                 interpolated_to_ground = self.interpolate_cyl(
                     lowest_measured_tree_point, tree_base_point, resolution=self.slice_increment
                 )
-                interpolated_full_cyl_array = np.vstack((interpolated_full_cyl_array, interpolated_to_ground))
+                interp_parts.append(interpolated_to_ground)
+        interpolated_full_cyl_array = np.vstack(interp_parts) if interp_parts else np.zeros((0, 14))
 
         v1 = interpolated_full_cyl_array[:, 3:6]
         v2 = np.vstack(
@@ -1142,12 +1133,12 @@ class MeasureTree:
                 headers_of_interest=list(self.cyl_dict),
             )
 
-        tree_data = np.zeros((0, 16))
+        tree_data_list = []
         radial_tree_aware_plot_cropping = False
         plot_centre = [[float(self.plot_summary["Plot Centre X"].iloc[0]), float(self.plot_summary["Plot Centre Y"].iloc[0])]]
 
-        stem_points_sorted = np.zeros((0, len(list(self.stem_dict))))
-        veg_points_sorted = np.zeros((0, len(list(self.veg_dict))))
+        stem_sorted_list = []
+        veg_sorted_list = []
 
         if self.parameters["plot_radius"] > 0 and self.parameters["plot_radius_buffer"] > 0:
             print("Using tree aware plot cropping mode...")
@@ -1166,7 +1157,7 @@ class MeasureTree:
             + taper_meas_height_increment,
             taper_meas_height_increment,
         )
-        taper_array = np.zeros((0, self.taper_measurement_heights.shape[0] + 5))
+        taper_list = []
 
         if tree_id_list.shape[0] > 0:
             max_tree_id = int(np.max(tree_id_list))
@@ -1207,7 +1198,8 @@ class MeasureTree:
                 self.output_dir + "cleaned_cyls.csv", index=False
             )
 
-            cleaned_cylinders = np.zeros((0, cleaned_cyls.shape[1]))
+            cleaned_cylinders_list = []
+            text_parts = []
 
             print("Sorting vegetation...")
             # Simple nearest neighbours vegetation sorting.
@@ -1412,47 +1404,36 @@ class MeasureTree:
                                 np.linalg.norm(np.array([x_tree_base, y_tree_base]) - np.array(plot_centre))
                                 < self.parameters["plot_radius"]
                             ):
-                                tree_data = np.vstack((tree_data, this_trees_data))
+                                tree_data_list.append(this_trees_data)
                                 if self.parameters["sort_stems"] or self.parameters["generate_output_point_cloud"]:
-                                    stem_points_sorted = np.vstack(
-                                        (stem_points_sorted, tree_points)
-                                    )  # TODO make this separate loop as it will be faster.
-                                veg_points_sorted = np.vstack((veg_points_sorted, tree_vegetation))
-                                cleaned_cylinders = np.vstack((cleaned_cylinders, tree))
-                                self.text_point_cloud = np.vstack(
-                                    (
-                                        self.text_point_cloud,
-                                        tree_id,
-                                        line0,
-                                        line1,
-                                        line2,
-                                        line3,
-                                        line4,
-                                        height_measurement_line,
-                                        dbh_circle_points,
-                                    )
-                                )
-                                taper_array = np.vstack((taper_array, taper))
+                                    stem_sorted_list.append(tree_points)
+                                veg_sorted_list.append(tree_vegetation)
+                                cleaned_cylinders_list.append(tree)
+                                text_parts.extend([
+                                    tree_id, line0, line1, line2, line3, line4,
+                                    height_measurement_line, dbh_circle_points,
+                                ])
+                                taper_list.append(taper)
 
                         else:
-                            tree_data = np.vstack((tree_data, this_trees_data))
-                            taper_array = np.vstack((taper_array, taper))
+                            tree_data_list.append(this_trees_data)
+                            taper_list.append(taper)
                             if self.parameters["sort_stems"] or self.parameters["generate_output_point_cloud"]:
-                                stem_points_sorted = np.vstack((stem_points_sorted, tree_points))
-                            veg_points_sorted = np.vstack((veg_points_sorted, tree_vegetation))
-                            cleaned_cylinders = np.vstack((cleaned_cylinders, tree))
-                            self.text_point_cloud = np.vstack(
-                                (
-                                    self.text_point_cloud,
-                                    tree_id,
-                                    line0,
-                                    line1,
-                                    line2,
-                                    line3,
-                                    height_measurement_line,
-                                    dbh_circle_points,
-                                )
-                            )
+                                stem_sorted_list.append(tree_points)
+                            veg_sorted_list.append(tree_vegetation)
+                            cleaned_cylinders_list.append(tree)
+                            text_parts.extend([
+                                tree_id, line0, line1, line2, line3,
+                                height_measurement_line, dbh_circle_points,
+                            ])
+
+            # Finalize accumulated lists into arrays
+            self.text_point_cloud = np.vstack(text_parts) if text_parts else np.zeros((0, 3))
+            stem_points_sorted = np.vstack(stem_sorted_list) if stem_sorted_list else np.zeros((0, len(list(self.stem_dict))))
+            veg_points_sorted = np.vstack(veg_sorted_list) if veg_sorted_list else np.zeros((0, len(list(self.veg_dict))))
+            cleaned_cylinders = np.vstack(cleaned_cylinders_list) if cleaned_cylinders_list else np.zeros((0, cleaned_cyls.shape[1]))
+            taper_array = np.vstack(taper_list) if taper_list else np.zeros((0, self.taper_measurement_heights.shape[0] + 5))
+            tree_data = np.vstack(tree_data_list) if tree_data_list else np.zeros((0, 16))
 
             save_file(self.output_dir + "text_point_cloud.las", self.text_point_cloud)
             if self.parameters["sort_stems"] or self.parameters["generate_output_point_cloud"]:
@@ -1489,6 +1470,16 @@ class MeasureTree:
                 save_file(
                     self.output_dir + "cleaned_cyl_vis.las", cleaned_cyl_vis, headers_of_interest=list(self.cyl_dict)
                 )
+
+        # Finalize accumulators from lists (handles case where tree_id_list was empty)
+        if not tree_data_list:
+            tree_data = np.zeros((0, 16))
+            taper_array = np.zeros((0, self.taper_measurement_heights.shape[0] + 5))
+            stem_points_sorted = np.zeros((0, len(list(self.stem_dict))))
+            veg_points_sorted = np.zeros((0, len(list(self.veg_dict))))
+        else:
+            # tree_data and taper_array were finalized inside the if block above
+            pass
 
         if radial_tree_aware_plot_cropping and self.parameters["generate_output_point_cloud"]:
             self.terrain_points = self.terrain_points[

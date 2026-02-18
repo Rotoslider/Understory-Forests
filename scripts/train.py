@@ -247,7 +247,10 @@ class TrainModel:
             print("Loading existing model...")
             try:
                 model.load_state_dict(
-                    torch.load(os.path.join(get_fsct_path("model"), self.parameters["model_filename"])),
+                    torch.load(
+                        os.path.join(get_fsct_path("model"), self.parameters["model_filename"]),
+                        weights_only=True,
+                    ),
                     strict=False,
                 )
 
@@ -268,7 +271,34 @@ class TrainModel:
         optimizer = optim.Adam(
             filter(lambda p: p.requires_grad, model.parameters()), lr=self.parameters["learning_rate"]
         )
-        criterion = nn.CrossEntropyLoss()
+
+        # Compute class weights from training data to handle class imbalance
+        # (CWD is severely underrepresented — ~55% accuracy without weights)
+        class_weights = self.parameters.get("class_weights", "auto")
+        if class_weights == "auto":
+            print("Computing class weights from training data...")
+            class_counts = np.zeros(4)
+            for data in self.train_loader:
+                labels = data.y.cpu().numpy().flatten()
+                for c in range(4):
+                    class_counts[c] += np.sum(labels == c)
+            total = class_counts.sum()
+            if total > 0 and np.all(class_counts > 0):
+                # Inverse frequency weighting: rare classes get higher weight
+                weights = total / (4.0 * class_counts)
+                weights = torch.tensor(weights, dtype=torch.float).to(self.device)
+                print(f"Class weights: Terrain={weights[0]:.2f}, Vegetation={weights[1]:.2f}, "
+                      f"CWD={weights[2]:.2f}, Stem={weights[3]:.2f}")
+                criterion = nn.CrossEntropyLoss(weight=weights)
+            else:
+                print("Could not compute class weights, using uniform weights.")
+                criterion = nn.CrossEntropyLoss()
+        elif class_weights is None:
+            criterion = nn.CrossEntropyLoss()
+        else:
+            # User-provided weights as list of 4 floats
+            weights = torch.tensor(class_weights, dtype=torch.float).to(self.device)
+            criterion = nn.CrossEntropyLoss(weight=weights)
         val_epoch_loss = 0
         val_epoch_acc = 0
 

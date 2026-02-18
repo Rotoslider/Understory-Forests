@@ -18,12 +18,17 @@ class ReportWriter:
     def __init__(self, parameters):
         self.parameters = parameters
         self.filename = self.parameters["point_cloud_filename"].replace("\\", "/")
-        self.output_dir = (
-            os.path.dirname(os.path.realpath(self.filename)).replace("\\", "/")
-            + "/"
-            + self.filename.split("/")[-1][:-4]
-            + "_FSCT_output/"
-        )
+        if self.parameters.get("output_dir"):
+            self.output_dir = self.parameters["output_dir"]
+            if not self.output_dir.endswith("/"):
+                self.output_dir += "/"
+        else:
+            self.output_dir = (
+                os.path.dirname(os.path.realpath(self.filename)).replace("\\", "/")
+                + "/"
+                + self.filename.split("/")[-1][:-4]
+                + "_FSCT_output/"
+            )
         self.filename = self.filename.split("/")[-1]
         self.plot_summary = pd.read_csv(self.output_dir + "plot_summary.csv", index_col=False)
 

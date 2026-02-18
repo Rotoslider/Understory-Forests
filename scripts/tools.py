@@ -16,19 +16,28 @@ from scipy import spatial
 
 
 def get_fsct_path(location_in_fsct=""):
-    current_working_dir = os.getcwd()
-    output_path = current_working_dir[: current_working_dir.index("FSCT") + 4]
+    # Project root is two levels up from this file (scripts/tools.py -> FSCT/)
+    from pathlib import Path
+    output_path = str(Path(__file__).resolve().parent.parent)
     if len(location_in_fsct) > 0:
         output_path = os.path.join(output_path, location_in_fsct)
     return output_path.replace("\\", "/")
 
 
-def make_folder_structure(filename):
+def make_folder_structure(filename, output_dir_override=None):
+    from pathlib import Path as _Path
     filename = filename.replace("\\", "/")
-    directory = os.path.dirname(os.path.realpath(filename)) + "/"
-    filename = filename.split("/")[-1][:-4]
-    output_dir = directory + filename + "_FSCT_output/"
-    working_dir = directory + filename + "_FSCT_output/working_directory/"
+
+    if output_dir_override:
+        output_dir = output_dir_override
+        if not output_dir.endswith("/"):
+            output_dir += "/"
+    else:
+        directory = os.path.dirname(os.path.realpath(filename)) + "/"
+        stem = _Path(filename).stem
+        output_dir = directory + stem + "_FSCT_output/"
+
+    working_dir = output_dir + "working_directory/"
 
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
@@ -114,11 +123,11 @@ def load_file(
         headers_of_interest = []
     if not silent:
         print("Loading file...", filename)
-    file_extension = filename[-4:]
+    file_extension = os.path.splitext(filename)[1].lower()
     coord_headers = ["x", "y", "z"]
     output_headers = []
 
-    if file_extension == ".las" or file_extension == ".laz":
+    if file_extension in (".las", ".laz"):
         try:
             inFile = laspy.read(filename)
         except FileNotFoundError:
@@ -137,6 +146,30 @@ def load_file(
                     pointcloud = np.vstack((pointcloud, getattr(inFile, header)))
                     output_headers.append(header)
         pointcloud = pointcloud.transpose()
+
+    elif file_extension == ".pcd":
+        try:
+            import open3d as o3d
+        except ImportError:
+            raise ImportError("open3d is required to load PCD files. Install with: pip install open3d")
+        try:
+            pcd = o3d.io.read_point_cloud(filename)
+        except Exception:
+            print(filename, "could not be read.")
+            if return_num_points:
+                return np.zeros((0, 3)), None, 0
+            else:
+                return np.zeros((0, 3)), None
+        pointcloud = np.asarray(pcd.points)
+        if pcd.has_colors() and len(headers_of_interest) > 0:
+            color_headers = [h for h in headers_of_interest[3:] if h in ("red", "green", "blue")]
+            if color_headers:
+                colors = (np.asarray(pcd.colors) * 65535).astype(np.float64)  # scale to LAS range
+                color_map = {"red": 0, "green": 1, "blue": 2}
+                for header in color_headers:
+                    if header in color_map:
+                        pointcloud = np.column_stack((pointcloud, colors[:, color_map[header]]))
+                        output_headers.append(header)
 
     elif file_extension == ".csv":
         pointcloud = np.array(pd.read_csv(filename, header=None, index_col=None, delim_whitespace=True))
@@ -167,7 +200,7 @@ def save_file(filename, pointcloud, headers_of_interest=None, silent=False):
     else:
         if not silent:
             print("Saving file:", filename)
-        if filename[-4:] == ".las":
+        if os.path.splitext(filename)[1].lower() == ".las":
             las = laspy.create(file_version="1.4", point_format=7)
             las.header.offsets = np.min(pointcloud[:, :3], axis=0)
             las.header.scales = [0.001, 0.001, 0.001]
@@ -195,7 +228,29 @@ def save_file(filename, pointcloud, headers_of_interest=None, silent=False):
             if not silent:
                 print("Saved.")
 
-        elif filename[-4:] == ".csv":
+        elif os.path.splitext(filename)[1].lower() == ".pcd":
+            try:
+                import open3d as o3d
+            except ImportError:
+                raise ImportError("open3d is required to save PCD files. Install with: pip install open3d")
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(pointcloud[:, :3])
+            if len(headers_of_interest) > 0:
+                color_indices = {}
+                for idx, header in enumerate(headers_of_interest):
+                    if header in ("red", "green", "blue"):
+                        color_indices[header] = idx
+                if len(color_indices) == 3:
+                    colors = np.zeros((pointcloud.shape[0], 3))
+                    colors[:, 0] = pointcloud[:, color_indices["red"]] / 65535.0
+                    colors[:, 1] = pointcloud[:, color_indices["green"]] / 65535.0
+                    colors[:, 2] = pointcloud[:, color_indices["blue"]] / 65535.0
+                    pcd.colors = o3d.utility.Vector3dVector(np.clip(colors, 0, 1))
+            o3d.io.write_point_cloud(filename, pcd)
+            if not silent:
+                print("Saved to:", filename)
+
+        elif os.path.splitext(filename)[1].lower() == ".csv":
             pd.DataFrame(pointcloud).to_csv(filename, header=None, index=None, sep=" ")
             print("Saved to:", filename)
 

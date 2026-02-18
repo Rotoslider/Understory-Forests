@@ -1,0 +1,804 @@
+"""Understory main application window.
+
+Layout:
+    +------------------------------------------------------------------+
+    |  [Understory Logo]  File  View  Tools  Help                       |
+    +------------------------------------------------------------------+
+    |  [Sidebar/Tool Panel]   |  [3D Point Cloud Viewer]                |
+    |                          |                                         |
+    |  Project  Prepare       |                                         |
+    |  Process  Advanced      |                                         |
+    |  Results                |                                         |
+    |  ─────────────────      |                                         |
+    |  [Run]  [Stop]          |                                         |
+    |  [Console Log]          |                                         |
+    +-------------------------+-----------------------------------------+
+    |  [Status Bar: Progress, GPU info, point count]                    |
+    +------------------------------------------------------------------+
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+from typing import Optional
+
+import numpy as np
+
+from PySide6.QtCore import Qt, QThread, Signal, Slot, QSize, QTimer, QProcess, QObject
+from PySide6.QtGui import QAction, QIcon, QPixmap
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QSplitter,
+    QLabel,
+    QStatusBar,
+    QMenuBar,
+    QMenu,
+    QFileDialog,
+    QMessageBox,
+    QProgressBar,
+)
+
+from understory.gui.panels.processing_panel import ProcessingPanel
+from understory.gui.viewer.point_cloud_viewer import PointCloudViewer
+
+
+class GpuMonitor(QObject):
+    """Polls GPU utilization and memory usage periodically."""
+
+    updated = Signal(str)  # formatted status string
+
+    def __init__(self, interval_ms: int = 2000, parent: QObject | None = None):
+        super().__init__(parent)
+        self._timer = QTimer(self)
+        self._timer.setInterval(interval_ms)
+        self._timer.timeout.connect(self._poll)
+
+    def start(self) -> None:
+        self._timer.start()
+
+    def stop(self) -> None:
+        self._timer.stop()
+
+    def _poll(self) -> None:
+        try:
+            import subprocess
+            result = subprocess.run(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=utilization.gpu,memory.used,memory.total",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                parts = result.stdout.strip().split(",")
+                util = int(parts[0].strip())
+                mem_used = float(parts[1].strip()) / 1024  # MiB -> GiB
+                mem_total = float(parts[2].strip()) / 1024
+                self.updated.emit(f"GPU: {util}% | {mem_used:.1f}/{mem_total:.0f} GB")
+                return
+        except Exception:
+            pass
+
+        # Fallback: torch.cuda.mem_get_info
+        try:
+            import torch
+            if torch.cuda.is_available():
+                free, total = torch.cuda.mem_get_info(0)
+                used = (total - free) / (1024**3)
+                total_gb = total / (1024**3)
+                self.updated.emit(f"GPU: {used:.1f}/{total_gb:.0f} GB")
+                return
+        except Exception:
+            pass
+
+        self.updated.emit("GPU: N/A")
+
+
+class MainWindow(QMainWindow):
+    """Main Understory application window."""
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.setWindowTitle("Understory")
+        self.setMinimumSize(1200, 800)
+
+        self._current_project_path: Optional[str] = None
+
+        self._load_stylesheet()
+        self._setup_icon()
+        self._setup_menu_bar()
+        self._setup_central_widget()
+        self._setup_status_bar()
+
+        # GPU live monitor (started/stopped with pipeline)
+        self._gpu_monitor = GpuMonitor(parent=self)
+        self._gpu_monitor.updated.connect(self._gpu_label.setText)
+
+    def _load_stylesheet(self) -> None:
+        qss_path = Path(__file__).parent.parent / "resources" / "styles" / "understory.qss"
+        if qss_path.exists():
+            self.setStyleSheet(qss_path.read_text())
+
+    def _setup_icon(self) -> None:
+        icon_path = Path(__file__).parent.parent / "resources" / "icons" / "understory-icon.png"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
+
+    def _setup_menu_bar(self) -> None:
+        menubar = self.menuBar()
+
+        # File menu
+        file_menu = menubar.addMenu("File")
+
+        new_project_action = QAction("New Project", self)
+        new_project_action.setShortcut("Ctrl+N")
+        new_project_action.triggered.connect(self._new_project)
+        file_menu.addAction(new_project_action)
+
+        file_menu.addSeparator()
+
+        open_action = QAction("Open Point Cloud...", self)
+        open_action.setShortcut("Ctrl+O")
+        open_action.triggered.connect(self._open_file)
+        file_menu.addAction(open_action)
+
+        open_project_action = QAction("Open Project...", self)
+        open_project_action.setShortcut("Ctrl+Shift+O")
+        open_project_action.triggered.connect(self._open_project)
+        file_menu.addAction(open_project_action)
+
+        file_menu.addSeparator()
+
+        close_cloud_action = QAction("Close Point Cloud", self)
+        close_cloud_action.setShortcut("Ctrl+W")
+        close_cloud_action.triggered.connect(self._close_point_cloud)
+        file_menu.addAction(close_cloud_action)
+
+        file_menu.addSeparator()
+
+        save_project_action = QAction("Save Project", self)
+        save_project_action.setShortcut("Ctrl+S")
+        save_project_action.triggered.connect(self._save_project)
+        file_menu.addAction(save_project_action)
+
+        save_as_action = QAction("Save Project As...", self)
+        save_as_action.setShortcut("Ctrl+Shift+S")
+        save_as_action.triggered.connect(self._save_project_as)
+        file_menu.addAction(save_as_action)
+
+        file_menu.addSeparator()
+
+        exit_action = QAction("Exit", self)
+        exit_action.setShortcut("Ctrl+Q")
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+
+        # View menu
+        view_menu = menubar.addMenu("View")
+
+        reset_view_action = QAction("Reset Camera", self)
+        reset_view_action.setShortcut("Home")
+        reset_view_action.triggered.connect(self._reset_camera)
+        view_menu.addAction(reset_view_action)
+
+        view_menu.addSeparator()
+
+        top_view_action = QAction("Top View", self)
+        top_view_action.setShortcut("Ctrl+1")
+        top_view_action.triggered.connect(lambda: self._viewer.set_camera_view("top"))
+        view_menu.addAction(top_view_action)
+
+        front_view_action = QAction("Front View", self)
+        front_view_action.setShortcut("Ctrl+2")
+        front_view_action.triggered.connect(lambda: self._viewer.set_camera_view("front"))
+        view_menu.addAction(front_view_action)
+
+        right_view_action = QAction("Right View", self)
+        right_view_action.setShortcut("Ctrl+3")
+        right_view_action.triggered.connect(lambda: self._viewer.set_camera_view("right"))
+        view_menu.addAction(right_view_action)
+
+        iso_view_action = QAction("Isometric View", self)
+        iso_view_action.setShortcut("Ctrl+4")
+        iso_view_action.triggered.connect(lambda: self._viewer.set_camera_view("iso"))
+        view_menu.addAction(iso_view_action)
+
+        # Tools menu
+        tools_menu = menubar.addMenu("Tools")
+
+        run_pipeline_action = QAction("Run Pipeline", self)
+        run_pipeline_action.setShortcut("F5")
+        run_pipeline_action.triggered.connect(self._run_pipeline)
+        tools_menu.addAction(run_pipeline_action)
+
+        stop_pipeline_action = QAction("Stop Pipeline", self)
+        stop_pipeline_action.setShortcut("Shift+F5")
+        stop_pipeline_action.triggered.connect(self._stop_pipeline)
+        tools_menu.addAction(stop_pipeline_action)
+
+        tools_menu.addSeparator()
+
+        training_action = QAction("Training Workflow...", self)
+        training_action.triggered.connect(self._open_training)
+        tools_menu.addAction(training_action)
+
+        label_editor_action = QAction("Label Editor...", self)
+        label_editor_action.triggered.connect(self._open_label_editor)
+        tools_menu.addAction(label_editor_action)
+
+        # Help menu
+        help_menu = menubar.addMenu("Help")
+
+        about_action = QAction("About Understory", self)
+        about_action.triggered.connect(self._show_about)
+        help_menu.addAction(about_action)
+
+    def _setup_central_widget(self) -> None:
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QHBoxLayout(central)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        splitter = QSplitter(Qt.Horizontal)
+
+        # Left panel: processing controls
+        self._processing_panel = ProcessingPanel()
+        self._processing_panel.setMinimumWidth(320)
+        self._processing_panel.setMaximumWidth(500)
+        self._processing_panel.file_loaded.connect(self._on_file_loaded)
+        self._processing_panel.pipeline_started.connect(self._on_pipeline_started)
+        self._processing_panel.pipeline_finished.connect(self._on_pipeline_finished)
+        self._processing_panel.pipeline_error.connect(self._on_pipeline_error)
+        self._processing_panel.plot_centre_changed.connect(self._on_plot_centre_changed)
+        self._processing_panel.swap_axes_requested.connect(self._on_swap_axes)
+        self._processing_panel.crop_outliers_requested.connect(self._on_crop_outliers)
+        self._processing_panel.reset_crop_requested.connect(self._on_reset_crop)
+        self._processing_panel.subsample_requested.connect(self._on_subsample_preview)
+        self._processing_panel.save_cloud_requested.connect(self._on_save_cloud)
+        self._processing_panel.project_saved.connect(self._on_project_saved)
+        self._processing_panel.load_output_layers.connect(self._on_load_output_layers)
+        self._processing_panel.tree_selected.connect(self._on_tree_selected)
+        splitter.addWidget(self._processing_panel)
+
+        # Right panel: 3D viewer
+        self._viewer = PointCloudViewer()
+        self._viewer.point_picked.connect(self._on_point_picked)
+        self._viewer.plot_centre_dragged.connect(self._on_plot_centre_dragged)
+        self._viewer.crop_state_changed.connect(self._on_crop_state_changed)
+        splitter.addWidget(self._viewer)
+
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([360, 840])
+
+        layout.addWidget(splitter)
+
+    def _setup_status_bar(self) -> None:
+        status_bar = QStatusBar()
+        self.setStatusBar(status_bar)
+
+        # GPU info
+        gpu_info = self._get_gpu_info()
+        self._gpu_label = QLabel(gpu_info)
+        status_bar.addWidget(self._gpu_label)
+
+        # Spacer
+        status_bar.addWidget(QLabel("  |  "))
+
+        # Progress bar
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setMaximumWidth(200)
+        self._progress_bar.setMaximumHeight(16)
+        self._progress_bar.setVisible(False)
+        status_bar.addWidget(self._progress_bar)
+
+        # Status message
+        self._status_label = QLabel("Ready")
+        status_bar.addPermanentWidget(self._status_label)
+
+    @staticmethod
+    def _get_gpu_info() -> str:
+        try:
+            import torch
+            if torch.cuda.is_available():
+                name = torch.cuda.get_device_name(0)
+                mem = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+                return f"GPU: {name} ({mem:.0f} GB)"
+            else:
+                return "GPU: None (CPU mode)"
+        except ImportError:
+            return "GPU: PyTorch not installed"
+
+    # --- Menu actions ---
+
+    def _open_file(self) -> None:
+        filepath, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Point Cloud",
+            "",
+            "Point Clouds (*.las *.laz *.pcd);;All Files (*)",
+        )
+        if filepath:
+            self._processing_panel.set_input_file(filepath)
+
+    def _open_project(self) -> None:
+        filepath, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Project",
+            "",
+            "Understory Projects (*.yaml *.yml);;All Files (*)",
+        )
+        if filepath:
+            self._processing_panel.load_project(filepath)
+            self._current_project_path = filepath
+            self._update_title()
+
+    def _save_project(self) -> None:
+        if self._current_project_path:
+            self._processing_panel.save_project(self._current_project_path)
+            self._status_label.setText(f"Saved: {os.path.basename(self._current_project_path)}")
+        else:
+            self._save_project_as()
+
+    def _save_project_as(self) -> None:
+        # Get project name from the UI
+        project_name = self._processing_panel._project_name.text().strip()
+        if not project_name:
+            QMessageBox.warning(
+                self, "Project Name Required",
+                "Please enter a project name in the Project tab before saving.",
+            )
+            self._processing_panel._project_name.setFocus()
+            return
+
+        # Ask user where to create the project folder
+        parent_dir = QFileDialog.getExistingDirectory(
+            self,
+            "Choose location for project folder",
+            str(Path.home()),
+        )
+        if not parent_dir:
+            return
+
+        # Create project folder structure: <parent>/<project_name>/
+        from understory.core.paths import ProjectPaths
+        project_dir = Path(parent_dir) / project_name
+        project_paths = ProjectPaths(project_dir)
+        project_paths.ensure_dirs()
+
+        # Save project.yaml inside the project folder
+        yaml_path = str(project_paths.config_file)
+        self._processing_panel.save_project(yaml_path)
+        self._current_project_path = yaml_path
+        self._update_title()
+        self._status_label.setText(f"Project saved to: {project_dir}")
+
+    def _new_project(self) -> None:
+        """Reset all settings and clear the viewer for a fresh project."""
+        reply = QMessageBox.question(
+            self,
+            "New Project",
+            "Clear all settings and start a new project?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            self._viewer.clear()
+            from understory.config.settings import ProjectConfig
+            self._processing_panel._apply_config(ProjectConfig())
+            self._processing_panel._file_input.clear()
+            self._processing_panel._output_dir.clear()
+            self._processing_panel._notes.clear()
+            self._processing_panel._console.clear()
+            self._current_project_path = None
+            self._processing_panel._last_save_path = None
+            self._processing_panel._prepared_cloud_path = None
+            self._update_title()
+            self._processing_panel._tabs.setCurrentIndex(0)  # Switch to Project tab
+            self._status_label.setText("Ready — New Project")
+
+    def _close_point_cloud(self) -> None:
+        self._viewer.clear()
+        self._status_label.setText("Ready")
+
+    def _reset_camera(self) -> None:
+        self._viewer._reset_view()
+
+    def _run_pipeline(self) -> None:
+        self._processing_panel.run_pipeline()
+
+    def _stop_pipeline(self) -> None:
+        self._processing_panel.stop_pipeline()
+
+    def _show_about(self) -> None:
+        QMessageBox.about(
+            self,
+            "About Understory",
+            "<h2>Understory</h2>"
+            "<p>Forest Structural Complexity Tool</p>"
+            "<p>Modernized GUI for forest LiDAR point cloud processing.</p>"
+            "<p>Performs semantic segmentation, tree measurement, "
+            "and report generation from terrestrial laser scanning data.</p>"
+            f"<p>Version {self._get_version()}</p>",
+        )
+
+    @staticmethod
+    def _get_version() -> str:
+        try:
+            from understory import __version__
+            return __version__
+        except ImportError:
+            return "unknown"
+
+    def _update_title(self) -> None:
+        if self._current_project_path:
+            name = os.path.basename(self._current_project_path)
+            self.setWindowTitle(f"Understory — {name}")
+        else:
+            self.setWindowTitle("Understory")
+
+    # --- Slots ---
+
+    @Slot(str)
+    def _on_file_loaded(self, filepath: str) -> None:
+        """Load and display a point cloud file in the viewer."""
+        self._viewer.clear()
+        self._status_label.setText(f"Loading: {os.path.basename(filepath)}")
+        QApplication.processEvents()
+
+        try:
+            # Add scripts to path for load_file
+            scripts_dir = str(Path(__file__).parent.parent.parent / "scripts")
+            if scripts_dir not in sys.path:
+                sys.path.insert(0, scripts_dir)
+            from tools import load_file
+
+            pc, headers = load_file(
+                filepath,
+                headers_of_interest=["x", "y", "z", "red", "green", "blue"],
+            )
+
+            if pc.shape[0] == 0:
+                self._status_label.setText("Error: Empty point cloud")
+                return
+
+            points = pc[:, :3]
+            colors = None
+            if headers and len(headers) >= 6:
+                color_cols = []
+                for h in ("red", "green", "blue"):
+                    if h in headers:
+                        color_cols.append(headers.index(h))
+                if len(color_cols) == 3:
+                    colors = pc[:, color_cols]
+
+            self._viewer.load_points(points, colors=colors)
+            self._status_label.setText(f"Loaded: {os.path.basename(filepath)} ({points.shape[0]:,} points)")
+
+        except Exception as e:
+            self._status_label.setText(f"Error loading file: {e}")
+
+    @Slot(int, float, float, float)
+    def _on_point_picked(self, index: int, x: float, y: float, z: float) -> None:
+        """When a point is picked in focus mode, offer it as plot centre."""
+        self._status_label.setText(f"Point picked: ({x:.3f}, {y:.3f}, {z:.3f})")
+
+    @Slot(object)
+    def _on_plot_centre_changed(self, centre) -> None:
+        """Update the viewer plot circle when plot centre changes."""
+        # Skip if this was triggered by the viewer drag updating the spinboxes
+        if self._processing_panel._updating_from_viewer:
+            return
+
+        radius = self._processing_panel._plot_radius.value()
+        if radius <= 0:
+            self._viewer.disable_plot_circle_interaction()
+            self._viewer.clear_plot_circle()
+            return
+
+        if centre is None:
+            # Auto mode — compute centre from loaded cloud
+            if self._viewer._points_full is not None:
+                cx = float(np.mean(self._viewer._points_full[:, 0]))
+                cy = float(np.mean(self._viewer._points_full[:, 1]))
+                z = float(np.median(self._viewer._points_full[:, 2]))
+                self._viewer.show_plot_circle(cx, cy, radius, z)
+                self._viewer.enable_plot_circle_interaction(cx, cy, radius, z)
+            else:
+                self._viewer.disable_plot_circle_interaction()
+                self._viewer.clear_plot_circle()
+        else:
+            z = 0
+            if self._viewer._points_full is not None:
+                z = float(np.median(self._viewer._points_full[:, 2]))
+            self._viewer.show_plot_circle(centre[0], centre[1], radius, z)
+            self._viewer.enable_plot_circle_interaction(centre[0], centre[1], radius, z)
+
+    @Slot(float, float)
+    def _on_plot_centre_dragged(self, x: float, y: float) -> None:
+        """When the user drags the plot circle widget in the viewer."""
+        self._processing_panel.set_plot_centre(x, y)
+
+    @Slot(str)
+    def _on_swap_axes(self, mode: str) -> None:
+        """Forward axis swap request from Prepare tab to the viewer."""
+        self._viewer.apply_axis_swap(mode)
+
+    @Slot()
+    def _on_crop_outliers(self) -> None:
+        """Forward crop request from Prepare tab to the viewer."""
+        self._viewer._crop_to_bounds()
+
+    @Slot()
+    def _on_reset_crop(self) -> None:
+        """Forward reset crop request from Prepare tab to the viewer."""
+        self._viewer._reset_crop()
+
+    @Slot(float)
+    def _on_subsample_preview(self, spacing: float) -> None:
+        """Apply voxel-grid subsampling to the loaded point cloud in the viewer."""
+        if self._viewer._points_full is None:
+            QMessageBox.warning(self, "No Data", "No point cloud is loaded.")
+            return
+
+        pts = self._viewer._points_full
+        n_before = pts.shape[0]
+        self._status_label.setText(f"Subsampling ({n_before:,} points, spacing={spacing:.3f}m)...")
+        QApplication.processEvents()
+
+        # Voxel-grid subsampling via np.unique on quantized coordinates
+        voxel_coords = np.floor(pts / spacing).astype(np.int64)
+        _, unique_idx = np.unique(voxel_coords, axis=0, return_index=True)
+        unique_idx.sort()
+
+        self._viewer._points_full = pts[unique_idx]
+        self._viewer._points_original = self._viewer._points_full.copy()
+        if self._viewer._colors_full is not None:
+            self._viewer._colors_full = self._viewer._colors_full[unique_idx]
+        if self._viewer._labels is not None:
+            self._viewer._labels = self._viewer._labels[unique_idx]
+        if self._viewer._tree_ids is not None:
+            self._viewer._tree_ids = self._viewer._tree_ids[unique_idx]
+        # Update originals so Reset Crop doesn't undo the subsample
+        self._viewer._colors_original = self._viewer._colors_full.copy() if self._viewer._colors_full is not None else None
+        self._viewer._labels_original = self._viewer._labels.copy() if self._viewer._labels is not None else None
+        self._viewer._tree_ids_original = self._viewer._tree_ids.copy() if self._viewer._tree_ids is not None else None
+        self._viewer._build_lod()
+        self._viewer._render()
+
+        n_after = self._viewer._points_full.shape[0]
+        self._status_label.setText(
+            f"Subsampled: {n_before:,} -> {n_after:,} points ({n_after/n_before*100:.1f}%)"
+        )
+
+    @Slot(bool)
+    def _on_crop_state_changed(self, cropped: bool) -> None:
+        """Update the Reset Crop button state in the Prepare tab."""
+        self._processing_panel._reset_crop_btn.setEnabled(cropped)
+
+    @Slot(str)
+    def _on_save_cloud(self, filepath: str) -> None:
+        """Save the current (possibly modified) point cloud to a .las file."""
+        if self._viewer._points_full is None:
+            QMessageBox.warning(self, "No Data", "No point cloud is loaded.")
+            return
+
+        try:
+            scripts_dir = str(Path(__file__).parent.parent.parent / "scripts")
+            if scripts_dir not in sys.path:
+                sys.path.insert(0, scripts_dir)
+            from tools import save_file
+
+            points = self._viewer._points_full
+            colors = self._viewer._colors_full
+
+            if colors is not None:
+                # Convert back to 0-65535 range for LAS
+                colors_out = (colors * 65535).astype(np.uint16).astype(np.float64)
+                data = np.hstack([points, colors_out])
+                headers = ["x", "y", "z", "red", "green", "blue"]
+            else:
+                data = points
+                headers = ["x", "y", "z"]
+
+            save_file(filepath, data, headers_of_interest=headers)
+            self._processing_panel._log(f"Point cloud saved to: {filepath}")
+            self._status_label.setText(f"Saved: {os.path.basename(filepath)}")
+
+            # Auto-save project config with updated prepared cloud path
+            if self._current_project_path:
+                self._processing_panel.save_project(self._current_project_path)
+                self._processing_panel._log(
+                    f"Project updated with prepared cloud: {os.path.basename(filepath)}"
+                )
+        except Exception as e:
+            QMessageBox.critical(self, "Save Error", f"Failed to save point cloud: {e}")
+
+    @Slot(str)
+    def _on_project_saved(self, filepath: str) -> None:
+        """Track current project path when saved from any source."""
+        self._current_project_path = filepath
+        self._update_title()
+
+    @Slot(list)
+    def _on_load_output_layers(self, paths: list) -> None:
+        """Load multiple output .las files and merge them into the viewer."""
+        self._viewer.clear()
+        self._status_label.setText("Loading output layers...")
+        QApplication.processEvents()
+
+        try:
+            scripts_dir = str(Path(__file__).parent.parent.parent / "scripts")
+            if scripts_dir not in sys.path:
+                sys.path.insert(0, scripts_dir)
+            from tools import load_file
+
+            all_points = []
+            all_labels = []
+            all_colors = []
+            all_tree_ids = []
+            for filepath in paths:
+                if not os.path.exists(filepath):
+                    continue
+                pc, headers = load_file(
+                    filepath,
+                    headers_of_interest=["x", "y", "z", "label", "tree_id", "red", "green", "blue"],
+                )
+                if pc.shape[0] == 0:
+                    continue
+                all_points.append(pc[:, :3])
+
+                if headers and "label" in headers:
+                    all_labels.append(pc[:, headers.index("label")].astype(np.int32))
+                else:
+                    all_labels.append(np.zeros(pc.shape[0], dtype=np.int32))
+
+                if headers and "tree_id" in headers:
+                    all_tree_ids.append(pc[:, headers.index("tree_id")].astype(np.int32))
+                else:
+                    all_tree_ids.append(np.full(pc.shape[0], -1, dtype=np.int32))
+
+                color_cols = []
+                for h in ("red", "green", "blue"):
+                    if headers and h in headers:
+                        color_cols.append(headers.index(h))
+                if len(color_cols) == 3:
+                    all_colors.append(pc[:, color_cols])
+                else:
+                    all_colors.append(None)
+
+            if not all_points:
+                self._status_label.setText("No points found in selected layers")
+                return
+
+            points = np.vstack(all_points)
+            labels = np.concatenate(all_labels)
+
+            # Merge tree IDs
+            tree_ids = np.concatenate(all_tree_ids)
+            has_tree_ids = np.any(tree_ids >= 0)
+
+            # Merge colors
+            colors = None
+            if all(c is not None for c in all_colors):
+                colors = np.vstack(all_colors)
+
+            self._viewer.load_points(
+                points, colors=colors, labels=labels,
+                tree_ids=tree_ids if has_tree_ids else None,
+            )
+
+            # Switch to classification color mode for layer viewing
+            from understory.gui.viewer.point_cloud_viewer import ColorMode
+            idx = self._viewer._color_combo.findData(ColorMode.CLASSIFICATION)
+            if idx >= 0:
+                self._viewer._color_combo.setCurrentIndex(idx)
+
+            n_files = sum(1 for p in paths if os.path.exists(p))
+            self._status_label.setText(
+                f"Loaded {n_files} layer(s): {points.shape[0]:,} points"
+            )
+        except Exception as e:
+            self._status_label.setText(f"Error loading layers: {e}")
+
+    @Slot(int)
+    def _on_tree_selected(self, tree_id: int) -> None:
+        """Highlight a specific tree in the viewer when selected in the results table."""
+        if self._viewer._tree_ids is None:
+            self._status_label.setText(
+                "Tree highlighting requires sorted layers (Stem/Veg Points Sorted)"
+            )
+            return
+
+        # Switch to Tree ID color mode so the selected tree is visible
+        from understory.gui.viewer.point_cloud_viewer import ColorMode
+        idx = self._viewer._color_combo.findData(ColorMode.TREE_ID)
+        if idx >= 0:
+            self._viewer._color_combo.setCurrentIndex(idx)
+
+        # Find the tree's points and focus the camera on them
+        mask = self._viewer._tree_ids == tree_id
+        if np.any(mask):
+            tree_pts = self._viewer._points_full[mask]
+            center = tree_pts.mean(axis=0)
+            self._viewer._plotter.set_focus(center)
+            self._status_label.setText(
+                f"Tree {tree_id}: {mask.sum():,} points at ({center[0]:.1f}, {center[1]:.1f})"
+            )
+
+    @Slot()
+    def _on_pipeline_started(self) -> None:
+        """Handle pipeline start — begin GPU monitoring."""
+        self._gpu_monitor.start()
+
+    @Slot(str)
+    def _on_pipeline_finished(self, output_dir: str) -> None:
+        """Handle pipeline completion — load results into viewer."""
+        self._gpu_monitor.stop()
+        self._status_label.setText(f"Pipeline complete. Output: {output_dir}")
+        self._progress_bar.setVisible(False)
+
+    @Slot()
+    def _on_pipeline_error(self) -> None:
+        """Handle pipeline error — stop GPU monitor."""
+        self._gpu_monitor.stop()
+
+    def _open_training(self) -> None:
+        """Open the training workflow panel in a separate window."""
+        from understory.gui.panels.training_panel import TrainingPanel
+        self._training_window = TrainingPanel()
+        self._training_window.setWindowTitle("Understory — Training Workflow")
+        self._training_window.resize(600, 800)
+        self._training_window.show()
+
+    def _open_label_editor(self) -> None:
+        """Open the label editor for a selected file."""
+        filepath, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Point Cloud for Label Editing",
+            "",
+            "Point Clouds (*.las *.laz *.pcd);;All Files (*)",
+        )
+        if not filepath:
+            return
+
+        from understory.gui.viewer.label_editor import LabelEditor
+
+        scripts_dir = str(Path(__file__).parent.parent.parent / "scripts")
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        from tools import load_file
+
+        pc, headers = load_file(filepath, headers_of_interest=["x", "y", "z", "label", "confidence"])
+
+        editor = LabelEditor()
+        labels = None
+        confidence = None
+        if headers and "label" in headers:
+            label_idx = headers.index("label")
+            labels = pc[:, label_idx].astype(np.int32)
+        if headers and "confidence" in headers:
+            conf_idx = headers.index("confidence")
+            confidence = pc[:, conf_idx].astype(np.float32)
+        editor.load_points(pc[:, :3], labels=labels, confidence=confidence)
+        editor.setWindowTitle(f"Label Editor — {os.path.basename(filepath)}")
+        editor.resize(1200, 800)
+        editor.show()
+        self._label_editor = editor
+
+    def set_progress(self, stage: str, fraction: float) -> None:
+        """Update the status bar progress."""
+        self._progress_bar.setVisible(True)
+        self._progress_bar.setValue(int(fraction * 100))
+        self._status_label.setText(stage)
+        if fraction >= 1.0:
+            self._progress_bar.setVisible(False)

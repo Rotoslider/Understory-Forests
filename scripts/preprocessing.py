@@ -26,7 +26,10 @@ class Preprocessing:
         self.max_points_per_box = self.parameters["max_points_per_box"]
         self.num_cpu_cores = parameters["num_cpu_cores"]
 
-        self.output_dir, self.working_dir = make_folder_structure(self.directory + self.filename)
+        self.output_dir, self.working_dir = make_folder_structure(
+            self.directory + self.filename,
+            output_dir_override=self.parameters.get("output_dir"),
+        )
 
         self.point_cloud, headers, self.num_points_orig = load_file(
             filename=self.directory + self.filename,
@@ -67,7 +70,8 @@ class Preprocessing:
                 self.parameters["num_cpu_cores"],
             )
 
-            save_file(self.output_dir + self.filename[:-4] + "_hack_mode_cloud.las", self.point_cloud)
+            from pathlib import Path as _Path
+            save_file(self.output_dir + _Path(self.filename).stem + "_hack_mode_cloud.las", self.point_cloud)
 
         # Global shift the point cloud to avoid loss of precision during segmentation.
         self.point_cloud[:, :2] = self.point_cloud[:, :2] - self.parameters["plot_centre"]
@@ -174,6 +178,20 @@ class Preprocessing:
         for x in threads:
             x.join()
 
+        # Verify that at least some boxes were created
+        npy_files = glob.glob(self.working_dir + "*.npy")
+        if len(npy_files) == 0:
+            num_pts = point_cloud.shape[0]
+            raise RuntimeError(
+                f"Preprocessing produced no valid boxes. The point cloud "
+                f"({num_pts:,} points) may be too sparse for the current "
+                f"box size ({self.box_dimensions[0]}m) and minimum points "
+                f"per box ({self.min_points_per_box}). "
+                f"Try increasing the plot radius, reducing "
+                f"'min_points_per_box', or using a denser point cloud."
+            )
+        print(f"Created {len(npy_files)} boxes for semantic segmentation.")
+
         self.preprocessing_time_end = time.time()
         self.preprocessing_time_total = self.preprocessing_time_end - self.preprocessing_time_start
         print("Preprocessing took", self.preprocessing_time_total, "s")
@@ -228,7 +246,8 @@ class Preprocessing:
         plot_summary = pd.DataFrame(np.zeros((1, len(plot_summary_headers))), columns=plot_summary_headers)
 
         plot_summary["Preprocessing Time (s)"] = self.preprocessing_time_total
-        plot_summary["PlotId"] = self.filename[:-4]
+        from pathlib import Path as _Path
+        plot_summary["PlotId"] = _Path(self.filename).stem
         plot_summary["Point Cloud Filename"] = self.parameters["point_cloud_filename"]
         plot_summary["Plot Centre X"] = self.parameters["plot_centre"][0]
         plot_summary["Plot Centre Y"] = self.parameters["plot_centre"][1]

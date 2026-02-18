@@ -48,7 +48,7 @@ def choose_most_confident_label(point_cloud, original_point_cloud):
         point_cloud: The segmented point cloud (often slightly downsampled from the process).
 
     Returns:
-        The original point cloud with segmentation labels added.
+        The original point cloud with segmentation label and confidence columns added.
     """
 
     print("Choosing most confident labels...")
@@ -57,11 +57,16 @@ def choose_most_confident_label(point_cloud, original_point_cloud):
     )
     _, indices = neighbours.kneighbors(original_point_cloud[:, :3])
 
-    labels = np.zeros((original_point_cloud.shape[0], 5))
+    labels = np.zeros((original_point_cloud.shape[0], 4))
     labels[:, :4] = np.median(point_cloud[indices][:, :, -4:], axis=1)
-    labels[:, 4] = np.argmax(labels[:, :4], axis=1)
+    predicted_class = np.argmax(labels[:, :4], axis=1)
+    confidence = np.max(labels[:, :4], axis=1)
 
-    original_point_cloud = np.hstack((original_point_cloud, labels[:, 4:]))
+    original_point_cloud = np.hstack((
+        original_point_cloud,
+        predicted_class.reshape(-1, 1),
+        confidence.reshape(-1, 1),
+    ))
     return original_point_cloud
 
 
@@ -74,7 +79,15 @@ class SemanticSegmentation:
         self.filename = self.parameters["point_cloud_filename"].replace("\\", "/")
         self.directory = os.path.dirname(os.path.realpath(self.filename)) + "/"
         self.filename = os.path.basename(self.filename)
-        self.output_dir = f"{self.directory}{self.filename[:-4]}_FSCT_output/"
+
+        if self.parameters.get("output_dir"):
+            self.output_dir = self.parameters["output_dir"]
+            if not self.output_dir.endswith("/"):
+                self.output_dir += "/"
+        else:
+            from pathlib import Path as _Path
+            stem = _Path(self.filename).stem
+            self.output_dir = f"{self.directory}{stem}_FSCT_output/"
         self.working_dir = f"{self.output_dir}working_directory/"
 
         self.plot_summary = pd.read_csv(f"{self.output_dir}plot_summary.csv")
@@ -84,6 +97,7 @@ class SemanticSegmentation:
              float(self.plot_summary["Plot Centre Y"].iloc[0])]
         ]
     def inference(self):
+        self.sem_seg_start_time = time.time()
         test_dataset = TestingDataset(
             root_dir=self.working_dir, points_per_box=self.parameters["max_points_per_box"], device=self.device
         )
@@ -91,17 +105,15 @@ class SemanticSegmentation:
         test_loader = DataLoader(test_dataset, batch_size=self.parameters["batch_size"], shuffle=False, num_workers=0)
 
         model = Net(num_classes=4).to(self.device)
+        model_path = get_fsct_path("model") + "/" + self.parameters["model_filename"]
         if self.parameters["use_CPU_only"]:
             model.load_state_dict(
-                torch.load(
-                    get_fsct_path("model") + "/" + self.parameters["model_filename"],
-                    map_location=torch.device("cpu"),
-                ),
+                torch.load(model_path, map_location=torch.device("cpu"), weights_only=True),
                 strict=False,
             )
         else:
             model.load_state_dict(
-                torch.load(get_fsct_path("model") + "/" + self.parameters["model_filename"]),
+                torch.load(model_path, weights_only=True),
                 strict=False,
             )
 
@@ -126,6 +138,13 @@ class SemanticSegmentation:
                     outputb[:, :3] = outputb[:, :3] + np.asarray(data.local_shift.cpu())[3 * batch : 3 + (3 * batch)]
                     output_list.append(outputb)
 
+            if not output_list:
+                raise RuntimeError(
+                    f"No .npy boxes found in {self.working_dir}. "
+                    "Preprocessing may have produced no boxes — this can happen "
+                    "when the plot radius crops the cloud to too few points. "
+                    "Try increasing the plot radius or reducing 'min_points_per_box'."
+                )
             self.output_point_cloud = np.vstack(output_list)
             print("\r" + str(num_boxes) + "/" + str(num_boxes))
         del outputb, out, batches, pos, output  # clean up anything no longer needed to free RAM.
@@ -139,7 +158,7 @@ class SemanticSegmentation:
         save_file(
             self.output_dir + "segmented.las",
             self.output,
-            headers_of_interest=["x", "y", "z", "red", "green", "blue", "label"],
+            headers_of_interest=["x", "y", "z", "red", "green", "blue", "label", "confidence"],
         )
 
         self.sem_seg_end_time = time.time()
@@ -148,5 +167,10 @@ class SemanticSegmentation:
         self.plot_summary.to_csv(self.output_dir + "plot_summary.csv", index=False)
         print("Semantic segmentation took", self.sem_seg_total_time, "s")
         print("Semantic segmentation done")
+        # Release GPU memory now that inference is complete
+        del model, test_dataset, test_loader
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         if self.parameters["delete_working_directory"]:
             shutil.rmtree(self.working_dir, ignore_errors=True)
