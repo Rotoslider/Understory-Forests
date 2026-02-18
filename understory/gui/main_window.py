@@ -189,6 +189,19 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
+        # Edit menu
+        edit_menu = menubar.addMenu("Edit")
+
+        undo_action = QAction("Undo Prepare", self)
+        undo_action.setShortcut("Ctrl+Z")
+        undo_action.triggered.connect(self._undo_prepare)
+        edit_menu.addAction(undo_action)
+
+        redo_action = QAction("Redo Prepare", self)
+        redo_action.setShortcut("Ctrl+Shift+Z")
+        redo_action.triggered.connect(self._redo_prepare)
+        edit_menu.addAction(redo_action)
+
         # View menu
         view_menu = menubar.addMenu("View")
 
@@ -565,6 +578,7 @@ class MainWindow(QMainWindow):
         if self._viewer._points_full is None:
             QMessageBox.warning(self, "No Data", "No point cloud is loaded.")
             return
+        self._viewer.push_undo("Subsample")
 
         pts = self._viewer._points_full
         n_before = pts.shape[0]
@@ -810,6 +824,22 @@ class MainWindow(QMainWindow):
         editor.resize(1200, 800)
         editor.show()
         self._label_editor = editor
+
+    # --- Undo/Redo ---
+
+    def _undo_prepare(self) -> None:
+        desc = self._viewer.undo()
+        if desc:
+            self._status_label.setText(f"Undid: {desc}")
+        else:
+            self._status_label.setText("Nothing to undo")
+
+    def _redo_prepare(self) -> None:
+        desc = self._viewer.redo()
+        if desc:
+            self._status_label.setText("Redo applied")
+        else:
+            self._status_label.setText("Nothing to redo")
 
     # --- Screenshot export ---
 

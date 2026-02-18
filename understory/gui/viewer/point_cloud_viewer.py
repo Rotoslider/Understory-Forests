@@ -5,6 +5,7 @@ Uses PyVista + pyvistaqt for rendering inside PySide6.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
@@ -13,11 +14,21 @@ import numpy as np
 try:
     import pyvista as pv
     from pyvistaqt import QtInteractor
-    from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QLabel, QPushButton
-    from PySide6.QtCore import Signal
+    from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QLabel, QPushButton, QDoubleSpinBox, QSlider
+    from PySide6.QtCore import Signal, Qt
     HAS_PYVISTA = True
 except ImportError:
     HAS_PYVISTA = False
+
+
+@dataclass
+class PrepareSnapshot:
+    """Snapshot of viewer state for undo/redo support."""
+    points: np.ndarray
+    colors: Optional[np.ndarray]
+    labels: Optional[np.ndarray]
+    tree_ids: Optional[np.ndarray]
+    description: str
 
 
 class ColorMode(Enum):
@@ -74,6 +85,16 @@ class PointCloudViewer(QWidget):
         self._dragging_circle: bool = False
         self._circle_actor = None
 
+        # Undo/redo stacks for preparation operations
+        self._undo_stack: list[PrepareSnapshot] = []
+        self._redo_stack: list[PrepareSnapshot] = []
+        self._max_undo_depth: int = 5
+
+        # Cross-section state
+        self._slice_axis: Optional[int] = None  # 0=X, 1=Y, 2=Z
+        self._slice_pos: float = 0.0
+        self._slice_thickness: float = 5.0
+
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -127,6 +148,45 @@ class PointCloudViewer(QWidget):
 
         layout.addLayout(toolbar)
 
+        # Slicer toolbar (Feature 10: Cross-Section View)
+        slicer_bar = QHBoxLayout()
+        slicer_bar.setContentsMargins(4, 0, 4, 4)
+
+        slicer_bar.addWidget(QLabel("Slice:"))
+        self._slice_combo = QComboBox()
+        self._slice_combo.addItem("Off", None)
+        self._slice_combo.addItem("X (Vertical)", 0)
+        self._slice_combo.addItem("Y (Vertical)", 1)
+        self._slice_combo.addItem("Z (Horizontal)", 2)
+        self._slice_combo.currentIndexChanged.connect(self._on_slice_mode_changed)
+        slicer_bar.addWidget(self._slice_combo)
+
+        self._slice_slider = QSlider(Qt.Horizontal)
+        self._slice_slider.setRange(0, 1000)
+        self._slice_slider.setValue(500)
+        self._slice_slider.setEnabled(False)
+        self._slice_slider.valueChanged.connect(self._on_slice_slider_changed)
+        slicer_bar.addWidget(self._slice_slider)
+
+        self._slice_pos_spin = QDoubleSpinBox()
+        self._slice_pos_spin.setRange(-1e6, 1e6)
+        self._slice_pos_spin.setDecimals(2)
+        self._slice_pos_spin.setEnabled(False)
+        self._slice_pos_spin.valueChanged.connect(self._on_slice_pos_changed)
+        slicer_bar.addWidget(self._slice_pos_spin)
+
+        slicer_bar.addWidget(QLabel("Thick:"))
+        self._slice_thick_spin = QDoubleSpinBox()
+        self._slice_thick_spin.setRange(0.1, 100.0)
+        self._slice_thick_spin.setValue(5.0)
+        self._slice_thick_spin.setSingleStep(0.5)
+        self._slice_thick_spin.setSuffix(" m")
+        self._slice_thick_spin.setEnabled(False)
+        self._slice_thick_spin.valueChanged.connect(self._on_slice_thickness_changed)
+        slicer_bar.addWidget(self._slice_thick_spin)
+
+        layout.addLayout(slicer_bar)
+
         # PyVista interactor
         pv.global_theme.background = "#1a2e26"
         pv.global_theme.font.color = "#a8d8c0"
@@ -178,7 +238,7 @@ class PointCloudViewer(QWidget):
         self._render()
 
     def _build_lod(self) -> None:
-        """Build LOD index arrays via random subsampling, respecting crop mask."""
+        """Build LOD index arrays via random subsampling, respecting crop mask and slice."""
         if self._points_full is None:
             return
 
@@ -187,6 +247,13 @@ class PointCloudViewer(QWidget):
             eligible = np.where(self._crop_mask)[0]
         else:
             eligible = np.arange(self._points_full.shape[0])
+
+        # Apply cross-section filter
+        if self._slice_axis is not None:
+            pts = self._points_full[eligible]
+            half = self._slice_thickness / 2
+            mask = np.abs(pts[:, self._slice_axis] - self._slice_pos) < half
+            eligible = eligible[mask]
 
         n = len(eligible)
 
@@ -425,6 +492,7 @@ class PointCloudViewer(QWidget):
         """Remove outlier points beyond the 99.5th percentile per axis."""
         if self._points_full is None:
             return
+        self.push_undo("Crop Outliers")
 
         pts = self._points_full
         mask = np.ones(pts.shape[0], dtype=bool)
@@ -492,6 +560,7 @@ class PointCloudViewer(QWidget):
         """
         if self._points_original is None:
             return
+        self.push_undo(f"Axis Swap ({mode})")
 
         if mode == "reset":
             self._points_full = self._points_original.copy()
@@ -582,3 +651,124 @@ class PointCloudViewer(QWidget):
             scale: Resolution multiplier (default 2x for high-res).
         """
         self._plotter.screenshot(filepath, transparent_background=False, scale=scale)
+
+    # --- Undo/Redo ---
+
+    def push_undo(self, description: str) -> None:
+        """Save current state to the undo stack before a destructive operation."""
+        if self._points_full is None:
+            return
+        snapshot = PrepareSnapshot(
+            points=self._points_full.copy(),
+            colors=self._colors_full.copy() if self._colors_full is not None else None,
+            labels=self._labels.copy() if self._labels is not None else None,
+            tree_ids=self._tree_ids.copy() if self._tree_ids is not None else None,
+            description=description,
+        )
+        self._undo_stack.append(snapshot)
+        if len(self._undo_stack) > self._max_undo_depth:
+            self._undo_stack.pop(0)
+        self._redo_stack.clear()
+
+    def undo(self) -> str:
+        """Undo the last preparation operation. Returns description of undone action."""
+        if not self._undo_stack:
+            return ""
+        # Save current state to redo stack
+        redo_snap = PrepareSnapshot(
+            points=self._points_full.copy(),
+            colors=self._colors_full.copy() if self._colors_full is not None else None,
+            labels=self._labels.copy() if self._labels is not None else None,
+            tree_ids=self._tree_ids.copy() if self._tree_ids is not None else None,
+            description="redo",
+        )
+        self._redo_stack.append(redo_snap)
+        snapshot = self._undo_stack.pop()
+        self._points_full = snapshot.points
+        self._colors_full = snapshot.colors
+        self._labels = snapshot.labels
+        self._tree_ids = snapshot.tree_ids
+        self._build_lod()
+        self._render()
+        return snapshot.description
+
+    def redo(self) -> str:
+        """Redo the last undone operation. Returns description."""
+        if not self._redo_stack:
+            return ""
+        # Save current to undo
+        undo_snap = PrepareSnapshot(
+            points=self._points_full.copy(),
+            colors=self._colors_full.copy() if self._colors_full is not None else None,
+            labels=self._labels.copy() if self._labels is not None else None,
+            tree_ids=self._tree_ids.copy() if self._tree_ids is not None else None,
+            description="undo",
+        )
+        self._undo_stack.append(undo_snap)
+        snapshot = self._redo_stack.pop()
+        self._points_full = snapshot.points
+        self._colors_full = snapshot.colors
+        self._labels = snapshot.labels
+        self._tree_ids = snapshot.tree_ids
+        self._build_lod()
+        self._render()
+        return "redo"
+
+    @property
+    def can_undo(self) -> bool:
+        return len(self._undo_stack) > 0
+
+    @property
+    def can_redo(self) -> bool:
+        return len(self._redo_stack) > 0
+
+    # --- Cross-Section View ---
+
+    def _on_slice_mode_changed(self, index: int) -> None:
+        axis = self._slice_combo.itemData(index)
+        self._slice_axis = axis
+        enabled = axis is not None
+        self._slice_slider.setEnabled(enabled)
+        self._slice_pos_spin.setEnabled(enabled)
+        self._slice_thick_spin.setEnabled(enabled)
+        if enabled and self._points_full is not None:
+            lo = float(self._points_full[:, axis].min())
+            hi = float(self._points_full[:, axis].max())
+            mid = (lo + hi) / 2
+            self._slice_pos_spin.setRange(lo, hi)
+            self._slice_pos_spin.setValue(mid)
+            self._slice_pos = mid
+        self._build_lod()
+        self._render()
+
+    def _on_slice_slider_changed(self, value: int) -> None:
+        if self._slice_axis is None or self._points_full is None:
+            return
+        lo = float(self._points_full[:, self._slice_axis].min())
+        hi = float(self._points_full[:, self._slice_axis].max())
+        pos = lo + (hi - lo) * value / 1000
+        self._slice_pos = pos
+        self._slice_pos_spin.blockSignals(True)
+        self._slice_pos_spin.setValue(pos)
+        self._slice_pos_spin.blockSignals(False)
+        self._build_lod()
+        self._render(preserve_camera=True)
+
+    def _on_slice_pos_changed(self, value: float) -> None:
+        if self._slice_axis is None or self._points_full is None:
+            return
+        self._slice_pos = value
+        lo = float(self._points_full[:, self._slice_axis].min())
+        hi = float(self._points_full[:, self._slice_axis].max())
+        slider_val = int((value - lo) / max(hi - lo, 0.001) * 1000)
+        self._slice_slider.blockSignals(True)
+        self._slice_slider.setValue(max(0, min(1000, slider_val)))
+        self._slice_slider.blockSignals(False)
+        self._build_lod()
+        self._render(preserve_camera=True)
+
+    def _on_slice_thickness_changed(self, value: float) -> None:
+        self._slice_thickness = value
+        if self._slice_axis is not None:
+            self._build_lod()
+            self._render(preserve_camera=True)

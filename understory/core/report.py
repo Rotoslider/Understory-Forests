@@ -64,6 +64,15 @@ def generate_report(
     # Generate stem map with brand colors
     _generate_branded_stem_map(output_dir, plot_summary, tree_data)
 
+    # Generate taper profile chart (Feature 8)
+    taper_path = output_dir / "taper_data.csv"
+    has_taper = False
+    if taper_path.exists():
+        has_taper = _generate_taper_chart(output_dir, pd.read_csv(taper_path))
+
+    # Generate crown projection map (Feature 9)
+    has_crown_map = _generate_crown_map(output_dir, plot_summary, tree_data)
+
     # Build template context
     filename = os.path.basename(point_cloud_filename)
     num_trees = tree_data.shape[0] if not tree_data.empty else 0
@@ -147,6 +156,9 @@ def generate_report(
     context["postprocessing_time"] = float(plot_summary.get("Post processing time (s)", pd.Series([0])).iloc[0])
     context["measurement_time"] = float(plot_summary.get("Measurement Time (s)", pd.Series([0])).iloc[0])
     context["total_time"] = float(plot_summary.get("Total Run Time (s)", pd.Series([0])).iloc[0])
+
+    context["show_taper"] = has_taper
+    context["show_crown_map"] = has_crown_map
 
     # Copy logo to output
     logo_src = Path(__file__).parent.parent / "resources" / "icons" / "understory-logo.png"
@@ -372,3 +384,191 @@ def _generate_branded_stem_map(
         facecolor="white",
     )
     plt.close(fig)
+
+
+def _generate_taper_chart(output_dir: Path, taper_data: pd.DataFrame) -> bool:
+    """Generate taper profile chart: height (Y) vs diameter (X), one line per tree.
+
+    Returns True if chart was generated successfully.
+    """
+    if taper_data.empty:
+        return False
+
+    # Taper CSV has columns: TreeId, then height increment columns (0.0, 0.2, 0.4, ...)
+    tree_id_col = taper_data.columns[0]
+    height_cols = [c for c in taper_data.columns[1:] if c != tree_id_col]
+    try:
+        heights = np.array([float(c) for c in height_cols])
+    except (ValueError, TypeError):
+        return False
+
+    if len(heights) == 0:
+        return False
+
+    # Color palette for tree lines
+    palette = [
+        BRAND_COLORS["dark_forest"], BRAND_COLORS["medium_forest"],
+        BRAND_COLORS["medium_green"], "#c0392b", "#8e44ad",
+        "#2980b9", "#e67e22", "#1abc9c", "#7f8c8d", "#d4ac0d",
+    ]
+
+    fig, ax = plt.subplots(figsize=(7, 8))
+    ax.set_title(
+        "Taper Profiles", fontsize=14,
+        color=BRAND_COLORS["dark_forest"], fontweight="bold",
+    )
+    ax.set_xlabel("Diameter (m)", fontsize=11)
+    ax.set_ylabel("Height (m)", fontsize=11)
+
+    for i, (_, row) in enumerate(taper_data.iterrows()):
+        diameters = np.array([row[c] for c in height_cols], dtype=float)
+        valid = ~np.isnan(diameters) & (diameters > 0)
+        if np.sum(valid) < 2:
+            continue
+        color = palette[i % len(palette)]
+        ax.plot(
+            diameters[valid], heights[valid],
+            linewidth=1.5, color=color, alpha=0.8,
+            label=f"Tree {int(row[tree_id_col])}",
+        )
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    if len(taper_data) <= 15:
+        ax.legend(fontsize=8, loc="upper right")
+
+    fig.savefig(
+        output_dir / "Taper_Profiles.png",
+        dpi=200, bbox_inches="tight", pad_inches=0.1,
+        facecolor="white",
+    )
+    plt.close(fig)
+    return True
+
+
+def _generate_crown_map(
+    output_dir: Path, plot_summary: pd.DataFrame, tree_data: pd.DataFrame
+) -> bool:
+    """Generate crown projection map with circles for each tree canopy.
+
+    Returns True if map was generated successfully.
+    """
+    if tree_data.empty:
+        return False
+
+    # Need crown position columns
+    has_crown_xy = "Crown_mean_x" in tree_data.columns and "Crown_mean_y" in tree_data.columns
+    has_base_xy = "x_tree_base" in tree_data.columns and "y_tree_base" in tree_data.columns
+    if not has_base_xy:
+        return False
+
+    plot_centre_x = float(plot_summary["Plot Centre X"].iloc[0])
+    plot_centre_y = float(plot_summary["Plot Centre Y"].iloc[0])
+    plot_radius = float(plot_summary["Plot Radius"].iloc[0])
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.set_title(
+        "Crown Projection Map", fontsize=16,
+        color=BRAND_COLORS["dark_forest"], fontweight="bold", pad=12,
+    )
+    ax.set_xlabel(f"Easting + {plot_centre_x:.2f} (m)", fontsize=11)
+    ax.set_ylabel(f"Northing + {plot_centre_y:.2f} (m)", fontsize=11)
+    ax.set_aspect("equal")
+
+    # DTM contours as base map
+    scripts_dir = str(Path(__file__).parent.parent.parent / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    try:
+        from tools import load_file
+        dtm_path = output_dir / "DTM.las"
+        if dtm_path.exists():
+            DTM, _ = load_file(str(dtm_path))
+            if DTM.shape[0] > 3:
+                import warnings
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    zmin = np.floor(np.min(DTM[:, 2]))
+                    zmax = np.ceil(np.max(DTM[:, 2]))
+                    levels = np.linspace(zmin, zmax, max(int(zmax - zmin) + 1, 2))
+                    if plot_radius > 0:
+                        plot_centre = np.array([plot_centre_x, plot_centre_y])
+                        DTM_plot = DTM[np.linalg.norm(DTM[:, :2] - plot_centre, axis=1) < plot_radius]
+                    else:
+                        DTM_plot = DTM
+                    if DTM_plot.shape[0] > 3:
+                        ax.tricontour(
+                            DTM_plot[:, 0] - plot_centre_x,
+                            DTM_plot[:, 1] - plot_centre_y,
+                            DTM_plot[:, 2],
+                            levels=levels, colors="#cccccc", linewidths=0.5, zorder=1,
+                        )
+    except Exception:
+        pass
+
+    # Plot boundary
+    if plot_radius > 0:
+        circle_outline = plt.Circle(
+            xy=(0, 0), radius=plot_radius,
+            fill=False, edgecolor=BRAND_COLORS["dark_forest"],
+            linewidth=2, zorder=8,
+        )
+        ax.add_patch(circle_outline)
+
+    # Color palette
+    palette = plt.cm.Set2(np.linspace(0, 1, max(len(tree_data), 8)))
+
+    x_base = np.array(tree_data["x_tree_base"])
+    y_base = np.array(tree_data["y_tree_base"])
+    tree_ids = np.array(tree_data["TreeId"])
+
+    for i, (_, row) in enumerate(tree_data.iterrows()):
+        # Crown centre
+        if has_crown_xy:
+            cx = float(row["Crown_mean_x"]) - plot_centre_x
+            cy = float(row["Crown_mean_y"]) - plot_centre_y
+        else:
+            cx = float(row["x_tree_base"]) - plot_centre_x
+            cy = float(row["y_tree_base"]) - plot_centre_y
+
+        # Crown radius estimate from crown area or DBH
+        crown_radius = 1.0
+        if "Crown_area" in tree_data.columns and not np.isnan(row.get("Crown_area", np.nan)):
+            crown_radius = float(np.sqrt(row["Crown_area"] / np.pi))
+        elif "DBH" in tree_data.columns:
+            crown_radius = float(row["DBH"]) * 5  # rough allometric estimate
+
+        crown_circle = plt.Circle(
+            xy=(cx, cy), radius=crown_radius,
+            facecolor=palette[i % len(palette)], alpha=0.3,
+            edgecolor=palette[i % len(palette)], linewidth=1.5,
+            zorder=5,
+        )
+        ax.add_patch(crown_circle)
+
+    # Stem positions
+    ax.scatter(
+        x_base - plot_centre_x, y_base - plot_centre_y,
+        marker="o", s=30, facecolor=BRAND_COLORS["dark_forest"],
+        edgecolor="white", linewidth=0.5, zorder=9,
+    )
+
+    # Tree labels
+    for i in range(len(x_base)):
+        ax.annotate(
+            str(int(tree_ids[i])),
+            (x_base[i] - plot_centre_x, y_base[i] - plot_centre_y),
+            textcoords="offset points", xytext=(4, 4),
+            fontsize=7, color=BRAND_COLORS["dark_forest"], zorder=11,
+        )
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    fig.savefig(
+        output_dir / "Crown_Projection.png",
+        dpi=200, bbox_inches="tight", pad_inches=0.1,
+        facecolor="white",
+    )
+    plt.close(fig)
+    return True

@@ -48,10 +48,17 @@ class PipelineWorker(QThread):
     progress = Signal(str, float)  # stage_name, fraction
     finished = Signal(str)  # output_dir
     error = Signal(str, str)  # short user message, full traceback
+    cancelled = Signal()  # emitted when pipeline is cooperatively cancelled
 
     def __init__(self, config: ProjectConfig, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self._config = config
+        import threading
+        self._cancel_event = threading.Event()
+
+    def request_stop(self) -> None:
+        """Request cooperative cancellation of the pipeline."""
+        self._cancel_event.set()
 
     def run(self) -> None:
         import traceback
@@ -60,9 +67,17 @@ class PipelineWorker(QThread):
         matplotlib.use("Agg")
         try:
             from understory.core.pipeline import run_pipeline
-            result = run_pipeline(self._config, progress_callback=self._emit_progress)
+            result = run_pipeline(
+                self._config,
+                progress_callback=self._emit_progress,
+                cancel_event=self._cancel_event,
+            )
             self.finished.emit(result.get("output_dir", ""))
         except Exception as e:
+            from understory.core.pipeline import PipelineCancelled
+            if isinstance(e, PipelineCancelled):
+                self.cancelled.emit()
+                return
             tb = traceback.format_exc()
             from understory.core.pipeline import PipelineStageError
             if isinstance(e, PipelineStageError):
@@ -1373,17 +1388,22 @@ class ProcessingPanel(QWidget):
         self._worker.progress.connect(self._on_progress)
         self._worker.finished.connect(self._on_finished)
         self._worker.error.connect(self._on_error)
+        self._worker.cancelled.connect(self._on_cancelled)
         self._worker.start()
         self.pipeline_started.emit()
 
     def stop_pipeline(self) -> None:
-        """Request the pipeline worker to stop."""
+        """Request the pipeline worker to stop cooperatively."""
         if self._worker and self._worker.isRunning():
             self._log("Stopping pipeline (will finish current operation)...")
-            self._worker.terminate()
-            self._worker.wait(5000)
-            self._run_btn.setEnabled(True)
+            self._worker.request_stop()
             self._stop_btn.setEnabled(False)
+            # Wait up to 10s for cooperative stop, fallback to terminate
+            if not self._worker.wait(10000):
+                self._log("Pipeline did not stop in time, forcing termination...")
+                self._worker.terminate()
+                self._worker.wait(5000)
+            self._run_btn.setEnabled(True)
             self._progress_bar.setVisible(False)
             self._progress_label.setVisible(False)
             self._log("Pipeline stopped.")
@@ -1413,6 +1433,14 @@ class ProcessingPanel(QWidget):
 
         self._populate_results(output_dir)
         self.pipeline_finished.emit(output_dir)
+
+    @Slot()
+    def _on_cancelled(self) -> None:
+        self._run_btn.setEnabled(True)
+        self._stop_btn.setEnabled(False)
+        self._progress_bar.setVisible(False)
+        self._progress_label.setVisible(False)
+        self._log("Pipeline cancelled by user.")
 
     @Slot(str, str)
     def _on_error(self, msg: str, traceback_str: str = "") -> None:

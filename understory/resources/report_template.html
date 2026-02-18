@@ -416,6 +416,22 @@
     </div>
     {% endif %}
 
+    {% if show_taper %}
+    <h2>Taper Profiles</h2>
+    <div class="figure">
+        <img src="Taper_Profiles.png" alt="Taper Profiles">
+        <div class="caption">Stem taper profiles showing diameter variation with height for each measured tree.</div>
+    </div>
+    {% endif %}
+
+    {% if show_crown_map %}
+    <h2>Crown Projection Map</h2>
+    <div class="figure">
+        <img src="Crown_Projection.png" alt="Crown Projection Map">
+        <div class="caption">Bird's-eye view of estimated crown extents with stem positions and DTM contours.</div>
+    </div>
+    {% endif %}
+
     {% if show_histograms and num_trees > 0 %}
     <h2>Distributions</h2>
     <div class="figure">

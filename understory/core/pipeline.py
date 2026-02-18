@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -22,6 +23,11 @@ class PipelineStageError(Exception):
         self.user_message = user_message
         self.original_error = original_error
         super().__init__(user_message)
+
+
+class PipelineCancelled(Exception):
+    """Raised when the pipeline is cooperatively cancelled via cancel_event."""
+    pass
 
 
 # Known error patterns → user-friendly translations
@@ -66,6 +72,7 @@ if _scripts_dir not in sys.path:
 def run_pipeline(
     config: ProjectConfig,
     progress_callback: Optional[Callable[[str, float], None]] = None,
+    cancel_event: Optional[threading.Event] = None,
 ) -> dict:
     """Run the FSCT processing pipeline.
 
@@ -73,6 +80,8 @@ def run_pipeline(
         config: Project configuration.
         progress_callback: Optional callback ``(stage_name, fraction)`` for
             progress reporting. ``fraction`` is 0.0–1.0 within each stage.
+        cancel_event: Optional threading.Event; if set, pipeline will stop
+            before the next stage with a PipelineCancelled exception.
 
     Returns:
         dict with keys like ``"tree_data_csv"``, ``"plot_summary_csv"``
@@ -156,13 +165,26 @@ def run_pipeline(
 
     _report("Starting", 0.0)
 
+    def _check_cancel() -> None:
+        """Raise PipelineCancelled if the cancel event is set."""
+        if cancel_event is not None and cancel_event.is_set():
+            raise PipelineCancelled()
+
+    def _make_sub_progress(name: str) -> Callable[[float], None]:
+        """Create a sub-progress callback for a specific stage."""
+        def sub_progress(fraction: float) -> None:
+            _check_cancel()
+            _stage_report(name, min(fraction, 0.99))
+        return sub_progress
+
     def _run_stage(name: str, func: Callable[[], None]) -> None:
-        """Run a pipeline stage with error translation."""
+        """Run a pipeline stage with error translation and cancellation check."""
+        _check_cancel()
         try:
             _stage_report(name, 0.0)
             func()
             _stage_report(name, 1.0)
-        except PipelineStageError:
+        except (PipelineStageError, PipelineCancelled):
             raise
         except Exception as e:
             user_msg = _translate_error(name, e)
@@ -177,6 +199,8 @@ def run_pipeline(
     if config.segmentation:
         def _segmentation():
             seg = SemanticSegmentation(parameters)
+            # Inject sub-progress callback for batch-level reporting
+            seg._understory_progress = _make_sub_progress("Semantic Segmentation")
             seg.inference()
             del seg
         _run_stage("Semantic Segmentation", _segmentation)
