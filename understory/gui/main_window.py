@@ -291,6 +291,13 @@ class MainWindow(QMainWindow):
         height_action = QAction("Height", self)
         height_action.triggered.connect(lambda: self._start_measure("height"))
         measure_menu.addAction(height_action)
+        measure_menu.addSeparator()
+        stop_measure_action = QAction("Stop Measuring (Escape)", self)
+        stop_measure_action.triggered.connect(self._stop_measure)
+        measure_menu.addAction(stop_measure_action)
+        clear_measure_action = QAction("Clear Measurements", self)
+        clear_measure_action.triggered.connect(self._clear_measurements)
+        measure_menu.addAction(clear_measure_action)
         tools_menu.addMenu(measure_menu)
 
         compare_clouds_action = QAction("Compare Point Clouds...", self)
@@ -747,6 +754,11 @@ class MainWindow(QMainWindow):
             points = np.vstack(all_points)
             labels = np.concatenate(all_labels)
 
+            # Auto-detect 0-indexed labels from inference (0-3) and convert
+            # to post-processing scheme (1-4) so CLASS_COLORS maps correctly.
+            if 0 in labels and 4 not in labels:
+                labels = labels + 1
+
             # Merge tree IDs
             tree_ids = np.concatenate(all_tree_ids)
             has_tree_ids = np.any(tree_ids >= 0)
@@ -986,9 +998,22 @@ class MainWindow(QMainWindow):
     def _start_measure(self, mode: str) -> None:
         if hasattr(self._viewer, 'start_measurement'):
             self._viewer.start_measurement(mode)
-            self._status_label.setText(f"Measure mode: {mode} — click two points")
+            self._status_label.setText(
+                f"Measure {mode}: click first point, then second point. "
+                f"Escape or Tools > Measure > Stop to exit."
+            )
         else:
             self._status_label.setText("Measurement tools not available in this viewer version")
+
+    def _stop_measure(self) -> None:
+        if hasattr(self._viewer, 'cancel_measurement'):
+            self._viewer.cancel_measurement()
+            self._status_label.setText("Measurement mode stopped")
+
+    def _clear_measurements(self) -> None:
+        if hasattr(self._viewer, 'clear_measurements'):
+            self._viewer.clear_measurements()
+            self._status_label.setText("Measurements cleared")
 
     def _compare_clouds(self) -> None:
         filepath, _ = QFileDialog.getOpenFileName(
@@ -1002,8 +1027,9 @@ class MainWindow(QMainWindow):
     def _open_flythrough(self) -> None:
         try:
             from understory.gui.panels.flythrough import FlythroughEditor
-            dlg = FlythroughEditor(plotter=self._viewer._plotter, parent=self)
-            dlg.exec()
+            # Non-modal so user can interact with the 3D viewer between keyframes
+            self._flythrough_dlg = FlythroughEditor(plotter=self._viewer._plotter, parent=self)
+            self._flythrough_dlg.show()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not open flythrough editor: {e}")
 

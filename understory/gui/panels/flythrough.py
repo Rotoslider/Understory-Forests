@@ -163,6 +163,11 @@ class FlythroughEditor(QDialog):
 
         self.setWindowTitle("Flythrough Editor")
         self.setMinimumSize(420, 600)
+        # Non-modal so the user can interact with the viewer to move the camera
+        self.setModal(False)
+        self.setWindowFlags(
+            self.windowFlags() | Qt.WindowStaysOnTopHint
+        )
         self._setup_ui()
 
     # ------------------------------------------------------------------
@@ -174,8 +179,16 @@ class FlythroughEditor(QDialog):
         layout.setContentsMargins(12, 12, 12, 12)
 
         title = QLabel("Animation / Flythrough Editor")
-        title.setObjectName("sectionHeader")
+        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #1a4a3a; padding: 4px 0;")
         layout.addWidget(title)
+
+        # Ensure readable text in case the system theme has light backgrounds
+        self.setStyleSheet("""
+            QDialog { background: #f0f7f4; }
+            QGroupBox { font-weight: bold; color: #1a4a3a; }
+            QLabel { color: #1a2e26; }
+            QPushButton { color: #1a2e26; }
+        """)
 
         # ---- Keyframe list ----
         kf_group = QGroupBox("Keyframes")

@@ -15,7 +15,7 @@ try:
     import pyvista as pv
     from pyvistaqt import QtInteractor
     from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QLabel, QPushButton, QDoubleSpinBox
-    from PySide6.QtCore import Signal
+    from PySide6.QtCore import Signal, Qt
     HAS_PYVISTA = True
 except ImportError:
     HAS_PYVISTA = False
@@ -158,28 +158,31 @@ class PointCloudViewer(QWidget):
         toolbar.addWidget(QLabel("|"))
         toolbar.addWidget(QLabel("Slice:"))
         self._slice_combo = QComboBox()
+        self._slice_combo.setMaximumWidth(95)
         self._slice_combo.addItem("Off", "off")
-        self._slice_combo.addItem("Horizontal", "horizontal")
-        self._slice_combo.addItem("Vertical X", "vertical_x")
-        self._slice_combo.addItem("Vertical Y", "vertical_y")
+        self._slice_combo.addItem("Horiz", "horizontal")
+        self._slice_combo.addItem("Vert X", "vertical_x")
+        self._slice_combo.addItem("Vert Y", "vertical_y")
         self._slice_combo.currentIndexChanged.connect(self._on_slice_mode_changed)
         toolbar.addWidget(self._slice_combo)
 
         self._slice_pos_spin = QDoubleSpinBox()
+        self._slice_pos_spin.setMaximumWidth(100)
         self._slice_pos_spin.setRange(-1e6, 1e6)
-        self._slice_pos_spin.setDecimals(2)
+        self._slice_pos_spin.setDecimals(1)
         self._slice_pos_spin.setSingleStep(0.5)
-        self._slice_pos_spin.setPrefix("Pos: ")
+        self._slice_pos_spin.setPrefix("P:")
         self._slice_pos_spin.setEnabled(False)
         self._slice_pos_spin.valueChanged.connect(self._on_slice_pos_changed)
         toolbar.addWidget(self._slice_pos_spin)
 
         self._slice_thick_spin = QDoubleSpinBox()
+        self._slice_thick_spin.setMaximumWidth(90)
         self._slice_thick_spin.setRange(0.1, 100)
         self._slice_thick_spin.setDecimals(1)
         self._slice_thick_spin.setSingleStep(0.5)
         self._slice_thick_spin.setValue(2.0)
-        self._slice_thick_spin.setPrefix("Thick: ")
+        self._slice_thick_spin.setPrefix("T:")
         self._slice_thick_spin.setSuffix("m")
         self._slice_thick_spin.setEnabled(False)
         self._slice_thick_spin.valueChanged.connect(self._on_slice_thick_changed)
@@ -507,9 +510,18 @@ class PointCloudViewer(QWidget):
         self._lod_indices = None
         self._plot_circle = None
         self._crop_mask = None
-        self._plot_circle_widget_active = False
+        self._comparison_distances = None
         self._dragging_circle = False
         self._circle_actor = None
+        # Clear interactive widgets (plot circle sphere)
+        if self._plot_circle_widget_active:
+            try:
+                self._plotter.clear_sphere_widgets()
+            except Exception:
+                pass
+            self._plot_circle_widget_active = False
+        # Cancel any active measurement
+        self.cancel_measurement()
         self._plotter.clear()
         self._point_count_label.setText("No data loaded")
 
@@ -571,6 +583,9 @@ class PointCloudViewer(QWidget):
     # --- Focus point ---
 
     def _on_focus_toggled(self, checked: bool) -> None:
+        # Cancel measurement mode if activating focus
+        if checked and self._measure_mode != MeasureMode.OFF:
+            self.cancel_measurement()
         self._focus_mode = checked
         if checked:
             self._plotter.enable_surface_point_picking(
@@ -809,27 +824,38 @@ class PointCloudViewer(QWidget):
         Args:
             mode: One of 'distance', 'height'.
         """
+        # Disable focus mode if active (avoids conflicting pickers)
+        if self._focus_mode:
+            self._focus_btn.setChecked(False)
+
         self.cancel_measurement()
         try:
             self._measure_mode = MeasureMode(mode)
         except ValueError:
             return
         self._measure_point_a = None
-        self._plotter.enable_surface_point_picking(
+        self._plotter.enable_point_picking(
             callback=self._on_measure_pick,
             show_message=False,
             show_point=True,
             color="yellow",
             point_size=12,
-            picker="cell",
+            tolerance=0.025,
+            use_picker=True,
         )
 
     def cancel_measurement(self) -> None:
-        """Cancel active measurement and clear visual markers."""
+        """Cancel active measurement mode (keeps existing visual markers)."""
         if self._measure_mode != MeasureMode.OFF:
-            self._plotter.disable_picking()
+            try:
+                self._plotter.disable_picking()
+            except Exception:
+                pass
         self._measure_mode = MeasureMode.OFF
         self._measure_point_a = None
+
+    def clear_measurements(self) -> None:
+        """Remove all measurement visual markers from the scene."""
         for actor in self._measure_actors:
             try:
                 self._plotter.remove_actor(actor)
@@ -885,6 +911,13 @@ class PointCloudViewer(QWidget):
 
         # Reset for next measurement (keep mode active)
         self._measure_point_a = None
+
+    def keyPressEvent(self, event) -> None:
+        """Handle key press events (Escape cancels measurement)."""
+        if event.key() == Qt.Key_Escape and self._measure_mode != MeasureMode.OFF:
+            self.cancel_measurement()
+            return
+        super().keyPressEvent(event)
 
     # --- Point cloud comparison ---
 

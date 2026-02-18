@@ -105,10 +105,20 @@ class AllometryPanel(QDialog):
         tree_data: Optional[pd.DataFrame] = None,
         registry: Optional[AllometryRegistry] = None,
         parent: Optional[QWidget] = None,
+        output_dir: Optional[str] = None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Allometric Equations")
         self.resize(900, 620)
+
+        # Auto-load tree_data from output directory if not provided directly
+        if tree_data is None and output_dir:
+            tree_data_path = Path(output_dir) / "tree_data.csv"
+            if tree_data_path.exists():
+                try:
+                    tree_data = pd.read_csv(tree_data_path)
+                except Exception:
+                    pass
 
         self._tree_data: pd.DataFrame = tree_data if tree_data is not None else pd.DataFrame()
         self._registry: AllometryRegistry = registry if registry is not None else AllometryRegistry()

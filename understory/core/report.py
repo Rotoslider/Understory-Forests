@@ -424,15 +424,22 @@ def _generate_taper_chart(output_dir: Path, tree_data: pd.DataFrame) -> bool:
     if taper_df.empty or "TreeId" not in taper_df.columns:
         return False
 
-    # Columns are: TreeId, then height increments (0.0, 0.2, 0.4, ...)
-    height_cols = [c for c in taper_df.columns if c != "TreeId"]
+    # Columns are: PlotId, TreeId, x_base, y_base, z_base, then height
+    # increments as numeric strings (0.0, 0.2, 0.4, ...)
+    skip_cols = {"PlotId", "TreeId", "x_base", "y_base", "z_base"}
+    height_cols = []
+    for c in taper_df.columns:
+        if c in skip_cols:
+            continue
+        try:
+            float(c)
+            height_cols.append(c)
+        except ValueError:
+            continue
     if not height_cols:
         return False
 
-    try:
-        heights = [float(c) for c in height_cols]
-    except ValueError:
-        return False
+    heights = [float(c) for c in height_cols]
 
     fig, ax = plt.subplots(figsize=(7, 6))
     ax.set_title("Taper Profiles", fontsize=14, color=BRAND_COLORS["dark_forest"], fontweight="bold")
