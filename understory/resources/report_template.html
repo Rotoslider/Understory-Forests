@@ -284,6 +284,28 @@
         </div>
     </div>
 
+    {% if basal_area > 0 or qmd > 0 %}
+    <h2>Stand Metrics</h2>
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="value">{{ "%.2f"|format(basal_area) }}</div>
+            <div class="label">Basal Area (m&sup2;/ha)</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "%.3f"|format(qmd) }}</div>
+            <div class="label">QMD (m)</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "%.1f"|format(loreys_height) }}</div>
+            <div class="label">Lorey's Height (m)</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "%.0f"|format(sdi) }}</div>
+            <div class="label">Stand Density Index</div>
+        </div>
+    </div>
+    {% endif %}
+
     <h2>Tree Measurements</h2>
     <table>
         <thead>

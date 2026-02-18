@@ -97,11 +97,34 @@ def generate_report(
             "canopy_cover": float(plot_summary.get("Canopy Cover Fraction", pd.Series([0])).iloc[0]),
             "trees": tree_data.to_dict("records"),
         })
+
+        # Stand-level metrics (Feature 5)
+        plot_area_ha = float(plot_summary["Plot Area"].iloc[0])
+        dbh_values = np.array(tree_data["DBH"]) if "DBH" in tree_data.columns else np.array([])
+        height_values = np.array(tree_data["Height"]) if "Height" in tree_data.columns else np.array([])
+        if len(dbh_values) > 0 and plot_area_ha > 0:
+            ba_per_tree = np.pi * (dbh_values / 2) ** 2
+            basal_area = float(np.sum(ba_per_tree) / plot_area_ha)
+            qmd = float(np.sqrt(np.mean(dbh_values ** 2)))
+            stems_per_ha = num_trees / plot_area_ha
+            sdi = float(stems_per_ha * (qmd / 0.254) ** 1.605) if qmd > 0 else 0
+            loreys_height = 0.0
+            if len(height_values) == len(ba_per_tree) and np.sum(ba_per_tree) > 0:
+                loreys_height = float(np.sum(height_values * ba_per_tree) / np.sum(ba_per_tree))
+            context.update({
+                "basal_area": basal_area,
+                "qmd": qmd,
+                "loreys_height": loreys_height,
+                "sdi": sdi,
+            })
+        else:
+            context.update({"basal_area": 0, "qmd": 0, "loreys_height": 0, "sdi": 0})
     else:
         context.update({
             "mean_dbh": 0, "median_dbh": 0, "min_dbh": 0, "max_dbh": 0,
             "mean_height": 0, "total_volume": 0, "canopy_cover": 0,
             "trees": [],
+            "basal_area": 0, "qmd": 0, "loreys_height": 0, "sdi": 0,
         })
 
     # Point cloud statistics

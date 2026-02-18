@@ -26,8 +26,8 @@ from typing import Optional
 
 import numpy as np
 
-from PySide6.QtCore import Qt, QThread, Signal, Slot, QSize, QTimer, QProcess, QObject
-from PySide6.QtGui import QAction, QIcon, QPixmap
+from PySide6.QtCore import Qt, QThread, Signal, Slot, QSize, QTimer, QProcess, QObject, QSettings, QMimeData, QUrl
+from PySide6.QtGui import QAction, QIcon, QPixmap, QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -112,6 +112,9 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1200, 800)
 
         self._current_project_path: Optional[str] = None
+        self._settings = QSettings("Understory", "Understory")
+
+        self.setAcceptDrops(True)
 
         self._load_stylesheet()
         self._setup_icon()
@@ -155,6 +158,10 @@ class MainWindow(QMainWindow):
         open_project_action.setShortcut("Ctrl+Shift+O")
         open_project_action.triggered.connect(self._open_project)
         file_menu.addAction(open_project_action)
+
+        self._recent_menu = QMenu("Recent Projects", self)
+        file_menu.addMenu(self._recent_menu)
+        self._update_recent_menu()
 
         file_menu.addSeparator()
 
@@ -211,6 +218,13 @@ class MainWindow(QMainWindow):
         iso_view_action.setShortcut("Ctrl+4")
         iso_view_action.triggered.connect(lambda: self._viewer.set_camera_view("iso"))
         view_menu.addAction(iso_view_action)
+
+        view_menu.addSeparator()
+
+        screenshot_action = QAction("Export Screenshot...", self)
+        screenshot_action.setShortcut("Ctrl+Shift+E")
+        screenshot_action.triggered.connect(self._export_screenshot)
+        view_menu.addAction(screenshot_action)
 
         # Tools menu
         tools_menu = menubar.addMenu("Tools")
@@ -341,6 +355,7 @@ class MainWindow(QMainWindow):
             self._processing_panel.load_project(filepath)
             self._current_project_path = filepath
             self._update_title()
+            self._add_recent_project(filepath)
 
     def _save_project(self) -> None:
         if self._current_project_path:
@@ -483,6 +498,7 @@ class MainWindow(QMainWindow):
 
             self._viewer.load_points(points, colors=colors)
             self._status_label.setText(f"Loaded: {os.path.basename(filepath)} ({points.shape[0]:,} points)")
+            self._add_recent_project(filepath)
 
         except Exception as e:
             self._status_label.setText(f"Error loading file: {e}")
@@ -794,6 +810,93 @@ class MainWindow(QMainWindow):
         editor.resize(1200, 800)
         editor.show()
         self._label_editor = editor
+
+    # --- Screenshot export ---
+
+    def _export_screenshot(self) -> None:
+        filepath, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Screenshot",
+            "",
+            "PNG Images (*.png);;JPEG Images (*.jpg *.jpeg);;TIFF Images (*.tiff *.tif);;All Files (*)",
+        )
+        if filepath:
+            self._viewer.export_screenshot(filepath)
+            self._status_label.setText(f"Screenshot saved: {os.path.basename(filepath)}")
+
+    # --- Recent projects ---
+
+    def _add_recent_project(self, filepath: str) -> None:
+        """Add a file path to the recent projects list."""
+        recent = self._settings.value("recent_projects", [], list)
+        if filepath in recent:
+            recent.remove(filepath)
+        recent.insert(0, filepath)
+        recent = recent[:10]
+        self._settings.setValue("recent_projects", recent)
+        self._update_recent_menu()
+
+    def _update_recent_menu(self) -> None:
+        """Rebuild the Recent Projects submenu from QSettings."""
+        self._recent_menu.clear()
+        recent = self._settings.value("recent_projects", [], list)
+        if not recent:
+            empty_action = QAction("(No recent projects)", self)
+            empty_action.setEnabled(False)
+            self._recent_menu.addAction(empty_action)
+            return
+        for filepath in recent:
+            action = QAction(os.path.basename(filepath), self)
+            action.setToolTip(filepath)
+            action.setData(filepath)
+            action.triggered.connect(lambda checked=False, p=filepath: self._open_recent(p))
+            self._recent_menu.addAction(action)
+        self._recent_menu.addSeparator()
+        clear_action = QAction("Clear Recent", self)
+        clear_action.triggered.connect(self._clear_recent)
+        self._recent_menu.addAction(clear_action)
+
+    def _open_recent(self, filepath: str) -> None:
+        """Open a recently used project or point cloud file."""
+        if not os.path.exists(filepath):
+            QMessageBox.warning(self, "File Not Found", f"File no longer exists:\n{filepath}")
+            return
+        if filepath.endswith((".yaml", ".yml")):
+            self._processing_panel.load_project(filepath)
+            self._current_project_path = filepath
+            self._update_title()
+        else:
+            self._processing_panel.set_input_file(filepath)
+        self._add_recent_project(filepath)
+
+    def _clear_recent(self) -> None:
+        self._settings.setValue("recent_projects", [])
+        self._update_recent_menu()
+
+    # --- Drag and drop ---
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                path = url.toLocalFile().lower()
+                if path.endswith((".las", ".laz", ".pcd", ".yaml", ".yml")):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        for url in event.mimeData().urls():
+            filepath = url.toLocalFile()
+            lower = filepath.lower()
+            if lower.endswith((".yaml", ".yml")):
+                self._processing_panel.load_project(filepath)
+                self._current_project_path = filepath
+                self._update_title()
+                self._add_recent_project(filepath)
+            elif lower.endswith((".las", ".laz", ".pcd")):
+                self._processing_panel.set_input_file(filepath)
+                self._add_recent_project(filepath)
+            break  # only handle first file
 
     def set_progress(self, stage: str, fraction: float) -> None:
         """Update the status bar progress."""

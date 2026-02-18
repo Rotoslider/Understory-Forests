@@ -262,6 +262,26 @@ class PointCloudViewer(QWidget):
                 self._plot_circle, color=self.PLOT_CIRCLE_COLOR, line_width=3,
             )
 
+        # Add legend/annotation based on color mode
+        if self._color_mode == ColorMode.CLASSIFICATION and self._labels is not None:
+            _class_names = {0: "Noise", 1: "Terrain", 2: "Vegetation", 3: "CWD", 4: "Stem"}
+            legend_entries = []
+            unique_labels = set(self._labels[self._lod_indices].astype(int))
+            for label_id in sorted(unique_labels):
+                name = _class_names.get(label_id, f"Class {label_id}")
+                color = CLASS_COLORS.get(label_id, [0.5, 0.5, 0.5])
+                legend_entries.append([name, [int(c * 255) for c in color]])
+            if legend_entries:
+                self._plotter.add_legend(
+                    legend_entries, bcolor=(26, 46, 38, 200),
+                    face="circle", size=(0.15, 0.15),
+                )
+        elif self._color_mode == ColorMode.TREE_ID and self._tree_ids is not None:
+            self._plotter.add_text(
+                "Colored by Tree ID", position="upper_right",
+                font_size=10, color="#a8d8c0",
+            )
+
         n_displayed = len(self._lod_indices)
         n_total = self._points_full.shape[0]
         if n_displayed < n_total:
@@ -553,3 +573,12 @@ class PointCloudViewer(QWidget):
             self._plotter.view_yz()
         elif view == "iso":
             self._plotter.view_isometric()
+
+    def export_screenshot(self, filepath: str, scale: int = 2) -> None:
+        """Export a screenshot of the current view.
+
+        Args:
+            filepath: Output image path (PNG, JPEG, or TIFF).
+            scale: Resolution multiplier (default 2x for high-res).
+        """
+        self._plotter.screenshot(filepath, transparent_background=False, scale=scale)
