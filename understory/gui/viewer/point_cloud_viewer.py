@@ -867,18 +867,10 @@ class PointCloudViewer(QWidget):
 
     def clear_measurements(self) -> None:
         """Remove all measurement visual markers from the scene."""
-        for actor in self._measure_actors:
-            try:
-                self._plotter.remove_actor(actor)
-            except Exception:
-                pass
         self._measure_actors.clear()
-        # Also clear any picked-point markers left by the picker
-        try:
-            self._plotter.clear_point_picking_representations()
-        except (AttributeError, Exception):
-            pass
-        self._plotter.render()
+        # Re-render to clean up all stray actors (measurement lines,
+        # labels, and VTK picker point representations)
+        self._render(preserve_camera=True)
 
     def _on_measure_pick(self, point: np.ndarray, *_args) -> None:
         """Handle a point pick during measurement."""

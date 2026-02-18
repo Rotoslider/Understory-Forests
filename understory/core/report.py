@@ -147,7 +147,11 @@ def generate_report(
             "basal_area_ha": 0, "qmd": 0, "loreys_height": 0, "sdi": 0,
         })
 
-    # Taper and crown map flags
+    # Taper and crown map flags (with fallback: if image exists, include it)
+    if not has_taper and (output_dir / "Taper_Profiles.png").exists():
+        has_taper = True
+    if not has_crown_map and (output_dir / "Crown_Projection_Map.png").exists():
+        has_crown_map = True
     context["has_taper"] = has_taper
     context["has_crown_map"] = has_crown_map
 

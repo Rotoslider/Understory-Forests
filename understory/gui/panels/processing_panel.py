@@ -233,14 +233,37 @@ class ProcessingPanel(QWidget):
         bottom_layout = QVBoxLayout(bottom)
         bottom_layout.setContentsMargins(12, 4, 12, 4)
 
-        # Progress
+        # Progress — dual bar: overall (top, thin) + stage (bottom, main)
+        self._progress_container = QWidget()
+        self._progress_container.setVisible(False)
+        prog_layout = QVBoxLayout(self._progress_container)
+        prog_layout.setContentsMargins(0, 0, 0, 0)
+        prog_layout.setSpacing(2)
+
+        self._overall_bar = QProgressBar()
+        self._overall_bar.setFixedHeight(6)
+        self._overall_bar.setTextVisible(False)
+        self._overall_bar.setStyleSheet("""
+            QProgressBar { background: #e0e8e4; border: none; border-radius: 3px; }
+            QProgressBar::chunk { background: #1a4a3a; border-radius: 3px; }
+        """)
+        prog_layout.addWidget(self._overall_bar)
+
         self._progress_bar = QProgressBar()
-        self._progress_bar.setVisible(False)
-        bottom_layout.addWidget(self._progress_bar)
+        self._progress_bar.setFixedHeight(20)
+        self._progress_bar.setFormat("%p%")
+        self._progress_bar.setStyleSheet("""
+            QProgressBar { background: #e0e8e4; border: none; border-radius: 3px;
+                           font-size: 11px; color: #1a2e26; }
+            QProgressBar::chunk { background: #4a9e7e; border-radius: 3px; }
+        """)
+        prog_layout.addWidget(self._progress_bar)
 
         self._progress_label = QLabel("")
-        self._progress_label.setVisible(False)
-        bottom_layout.addWidget(self._progress_label)
+        self._progress_label.setStyleSheet("font-size: 11px; color: #2d7a5e;")
+        prog_layout.addWidget(self._progress_label)
+
+        bottom_layout.addWidget(self._progress_container)
 
         # Run / Stop buttons
         btn_row = QHBoxLayout()
@@ -1472,9 +1495,10 @@ class ProcessingPanel(QWidget):
         self._console.clear()
         self._log("Starting pipeline...")
 
-        self._progress_bar.setVisible(True)
+        self._progress_container.setVisible(True)
+        self._overall_bar.setValue(0)
         self._progress_bar.setValue(0)
-        self._progress_label.setVisible(True)
+        self._progress_label.setText("Starting...")
         self._run_btn.setEnabled(False)
         self._stop_btn.setEnabled(True)
 
@@ -1496,18 +1520,43 @@ class ProcessingPanel(QWidget):
         else:
             self._log("No pipeline is running.")
 
+    # Stage weights matching pipeline.py for within-stage progress
+    _STAGE_WEIGHTS = [
+        ("Starting", 0), ("Preprocessing", 15), ("Semantic Segmentation", 45),
+        ("Post-processing", 20), ("Measurement", 15), ("Report Generation", 5),
+        ("Complete", 0),
+    ]
+
     @Slot(str, float)
     def _on_progress(self, stage: str, fraction: float) -> None:
-        self._progress_bar.setValue(int(fraction * 100))
-        self._progress_label.setText(stage)
-        self._log(f"[{fraction*100:.0f}%] {stage}")
+        # Overall bar (dark green, thin)
+        self._overall_bar.setValue(int(fraction * 100))
+        # Stage bar — estimate within-stage fraction from overall fraction
+        stage_frac = self._estimate_stage_fraction(stage, fraction)
+        self._progress_bar.setValue(int(stage_frac * 100))
+        self._progress_label.setText(f"{stage}  —  {fraction*100:.0f}% overall")
+
+    def _estimate_stage_fraction(self, stage: str, overall: float) -> float:
+        """Estimate within-stage fraction from overall pipeline fraction."""
+        # Build stage ranges from weights
+        total = sum(w for _, w in self._STAGE_WEIGHTS) or 1
+        cum = 0.0
+        for name, weight in self._STAGE_WEIGHTS:
+            start = cum / total
+            end = (cum + weight) / total
+            if name == stage and weight > 0:
+                rng = end - start
+                if rng > 0:
+                    return min(1.0, max(0.0, (overall - start) / rng))
+                return 0.0
+            cum += weight
+        return overall  # fallback
 
     @Slot(str)
     def _on_finished(self, output_dir: str) -> None:
         self._run_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
-        self._progress_bar.setVisible(False)
-        self._progress_label.setVisible(False)
+        self._progress_container.setVisible(False)
         self._log(f"Pipeline complete! Output: {output_dir}")
 
         # Refresh run selector and auto-select the completed run
@@ -1524,8 +1573,7 @@ class ProcessingPanel(QWidget):
     def _on_error(self, msg: str, traceback_str: str = "") -> None:
         self._run_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
-        self._progress_bar.setVisible(False)
-        self._progress_label.setVisible(False)
+        self._progress_container.setVisible(False)
         self._log(f"ERROR: {msg}")
         if traceback_str:
             self._log(f"--- Full Traceback ---\n{traceback_str}")
@@ -1536,8 +1584,7 @@ class ProcessingPanel(QWidget):
     def _on_cancelled(self) -> None:
         self._run_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
-        self._progress_bar.setVisible(False)
-        self._progress_label.setVisible(False)
+        self._progress_container.setVisible(False)
         self._log("Pipeline cancelled by user.")
 
     def _log(self, msg: str) -> None:
