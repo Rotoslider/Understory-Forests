@@ -365,6 +365,38 @@ Verification                                                                    
 
 -------------------------------------------------------
 
+All 20 features are now implemented and committed. Here's a summary:
+                                                                                                                    
+  Commit 0426a33 — 984 insertions across 8 files
+                                                 
+  Phase 1 (Quick Wins) — Complete
+                                                                                                                    
+  1. Screenshot Export — Ctrl+Shift+E in View menu, uses PyVista screenshot() at 2x
+  2. Recent Projects — Up to 10 entries via QSettings, auto-recorded on file open
+  3. Drag-and-Drop — .las/.laz/.pcd/.yaml/.yml accepted on main window
+  4. Colorbar Legend — Classification legend with class names/colors, Tree ID annotation
+  5. Stand Metrics — Basal area, QMD, Lorey's height, SDI in report
+
+  Phase 2 (Core Improvements) — Complete
+
+  6. Cooperative Cancellation — threading.Event + PipelineCancelled replaces terminate()
+  7. Undo/Redo — 5-deep snapshot stack for Prepare tab (crop, axis swap)
+  8. Taper Profile Charts — Height vs diameter per tree in report
+  9. Crown Projection Map — Overhead canopy view in report
+  10. Cross-Section View — Horizontal/vertical slice controls in viewer toolbar
+  11. Sub-Stage Progress — Inference batch progress piped through to progress bar
+
+  Phase 3 (Advanced Features) — Complete
+
+  12-16. Batch Processing, Comparison, Growth, Allometry, GIS Export — Menu integration + scaffolding modules
+  17. Measurement Tools — Distance/height with visual line + label in viewer
+  18. Point Cloud Comparison — NN distance coloring with RdYlBu_r diverging colormap
+  19. Photo Attachment — Full pipeline: settings → panel → pipeline → report template
+  20. Flythrough — Menu integration + scaffolding editor
+
+
+-----------------------------------------------------
+
 ideas from Sean K
 
 CWD Volume
