@@ -1,18 +1,21 @@
 cd ~/projects/FSCT
 ./venv/bin/python -m understory
 ------------------------------------------------
-Main App opens in a window which is great. Not full screen. If I try to drag it the window pots to full screen for a second then back to original size and then I can drag without issue. Only happens first drag after launch.
+Commit fea323f is your safety net.
 
-Issues with the Label Editor. 
-after selecting or highlighting an area the screen pops back to default full view location. Then I select which label to move the selected points too and then have to zoom back in to where I was viewing before I made the selection.
-selecting or deselecting a class resets to full view. It would be helpful to toggle them on and off without loosing the view to help choose what to select. It would also be helpful to be able to switch to a top or side view without it zooming all the way back out.
+Main App opens in a windowed view which is great. If I try to drag the window it changes to full screen for a second then back to original size and then I can drag without issue. Only happens first drag after launch.
+Issues with the Label Editor:
+after selecting or highlighting an area the screen pops back to default full view location. When I select points to move to another label I have to zoom back in to where I was viewing before I made the selection.
+selecting or deselecting a class resets to full view. It would be helpful to toggle them on and off without it zooming out. It would also be helpful to be able to switch to a top or side view without it zooming all the way back out.
+Last time you tried to fix this you broke the confidence tools and the ability to select points.  make sure your changes do not break some other part of the functionality.
+
 
 ------------------------------------------------------------
 Add more labels to classify. canopy plus understory brush. 
 Add Dead tree detection
 ---------------------------------
 
- It would be helpful to be able to draw a poly-line and or box around an area of cloud to remove or keep points. Typically a scan captures unwanted data at the edges that need trimmed to get the proper plot area.
+ It would be helpful when preparing a point cloud to be able to draw a poly-line and or box around an area of cloud to remove or keep points. Typically a scan captures unwanted data at the edges that need trimmed to get the proper plot area.
 
 
  
