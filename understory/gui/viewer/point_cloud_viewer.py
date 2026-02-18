@@ -202,6 +202,10 @@ class PointCloudViewer(QWidget):
         self._plotter.enable_eye_dome_lighting()
         layout.addWidget(self._plotter.interactor)
 
+        # Listen for Escape key via VTK (QWidget.keyPressEvent won't fire
+        # because the VTK interactor consumes key events first).
+        self._plotter.iren.interactor.AddObserver("KeyPressEvent", self._on_vtk_key_press)
+
     def load_points(
         self,
         points: np.ndarray,
@@ -412,7 +416,14 @@ class PointCloudViewer(QWidget):
 
         elif self._color_mode == ColorMode.CLASSIFICATION:
             if self._labels is not None:
-                return self._labels[idx].astype(np.float32)
+                # Convert labels to RGB colors using CLASS_COLORS map
+                lbl = self._labels[idx].astype(int)
+                colors = np.zeros((len(lbl), 3), dtype=np.float64)
+                for class_id, color in CLASS_COLORS.items():
+                    mask = lbl == class_id
+                    if mask.any():
+                        colors[mask] = color
+                return colors
             return None
 
         elif self._color_mode == ColorMode.TREE_ID:
@@ -862,6 +873,11 @@ class PointCloudViewer(QWidget):
             except Exception:
                 pass
         self._measure_actors.clear()
+        # Also clear any picked-point markers left by the picker
+        try:
+            self._plotter.clear_point_picking_representations()
+        except (AttributeError, Exception):
+            pass
         self._plotter.render()
 
     def _on_measure_pick(self, point: np.ndarray, *_args) -> None:
@@ -912,12 +928,11 @@ class PointCloudViewer(QWidget):
         # Reset for next measurement (keep mode active)
         self._measure_point_a = None
 
-    def keyPressEvent(self, event) -> None:
-        """Handle key press events (Escape cancels measurement)."""
-        if event.key() == Qt.Key_Escape and self._measure_mode != MeasureMode.OFF:
+    def _on_vtk_key_press(self, obj, event) -> None:
+        """Handle VTK key press events (Escape cancels measurement)."""
+        key = self._plotter.iren.interactor.GetKeySym()
+        if key == "Escape" and self._measure_mode != MeasureMode.OFF:
             self.cancel_measurement()
-            return
-        super().keyPressEvent(event)
 
     # --- Point cloud comparison ---
 
