@@ -359,16 +359,33 @@ class LabelEditor(QWidget):
             self._plotter.render()
 
     def _set_camera_view(self, view: str) -> None:
+        """Switch camera direction while preserving focal point and zoom distance."""
+        if self._points is None:
+            return
+        cam = self._plotter.camera
+        focal = np.array(cam.focal_point)
+        dist = cam.distance
+
         if view == "top":
-            self._plotter.view_xy()
+            position = focal + np.array([0.0, 0.0, dist])
+            viewup = (0, 1, 0)
         elif view == "front":
-            self._plotter.view_xz()
+            position = focal + np.array([0.0, -dist, 0.0])
+            viewup = (0, 0, 1)
         elif view == "right":
-            self._plotter.view_yz()
+            position = focal + np.array([dist, 0.0, 0.0])
+            viewup = (0, 0, 1)
         elif view == "iso":
-            self._plotter.view_isometric()
+            d = dist / np.sqrt(3)
+            position = focal + np.array([d, d, d])
+            viewup = (0, 0, 1)
+        else:
+            return
+
+        self._plotter.camera_position = [tuple(position), tuple(focal), viewup]
         # Restore 3D trackball interaction so user can still pan/rotate
         self._plotter.enable_trackball_style()
+        self._plotter.render()
 
     def _setup_shortcuts(self) -> None:
         for class_id in CLASSES:
@@ -441,7 +458,7 @@ class LabelEditor(QWidget):
         self._undo_stack.clear()
         self._redo_stack.clear()
 
-        self._render()
+        self._render(reset_camera=True)
         self._update_stats()
 
     def _on_visibility_changed(self) -> None:
@@ -498,9 +515,17 @@ class LabelEditor(QWidget):
                 mask |= self._labels == class_id
         return mask
 
-    def _render(self) -> None:
+    def _render(self, *, reset_camera: bool = False) -> None:
         if self._points is None or self._labels is None:
             return
+
+        # Preserve camera across re-render so the view doesn't jump
+        saved_camera = None
+        if not reset_camera:
+            try:
+                saved_camera = self._plotter.camera_position
+            except Exception:
+                pass
 
         self._plotter.clear()
 
@@ -547,7 +572,12 @@ class LabelEditor(QWidget):
             self._plotter.enable_eye_dome_lighting()
         else:
             self._release_edl()
-        self._plotter.reset_camera()
+
+        # Restore camera or reset on first load
+        if saved_camera is not None:
+            self._plotter.camera_position = saved_camera
+        else:
+            self._plotter.reset_camera()
 
     def _on_box_select(self, selected) -> None:
         """Handle rectangle-through picking selection."""
