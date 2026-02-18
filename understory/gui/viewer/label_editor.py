@@ -278,7 +278,7 @@ class LabelEditor(QWidget):
         splitter.addWidget(self._plotter.interactor)
         splitter.setStretchFactor(0, 0)  # sidebar doesn't stretch
         splitter.setStretchFactor(1, 1)  # viewer takes remaining space
-        splitter.setSizes([360, 840])    # initial sidebar 360px
+        splitter.setSizes([380, 820])    # initial sidebar 380px
         layout.addWidget(splitter)
 
     def _toggle_picking(self, enabled: bool) -> None:
