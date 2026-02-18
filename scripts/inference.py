@@ -125,9 +125,6 @@ class SemanticSegmentation:
             output_list = []
             for i, data in enumerate(test_loader):
                 print("\r" + str(i * self.parameters["batch_size"]) + "/" + str(num_boxes))
-                # Report sub-stage progress if callback injected by Understory GUI
-                if hasattr(self, '_understory_progress') and num_boxes > 0:
-                    self._understory_progress(min(i * self.parameters["batch_size"], num_boxes) / num_boxes)
                 data = data.to(self.device)
                 out = model(data)
                 out = out.permute(2, 1, 0).squeeze()
