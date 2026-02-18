@@ -194,6 +194,22 @@
             margin-top: 48px;
         }
 
+        /* Photo grid */
+        .photo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+            margin: 16px 0;
+        }
+
+        .photo-grid img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
         /* Print styles */
         @media print {
             .header { padding: 16px 24px; }
@@ -283,6 +299,28 @@
             <div class="label">Total Volume (m&sup3;)</div>
         </div>
     </div>
+
+    {% if num_trees > 0 and basal_area_ha is defined %}
+    <h2>Stand Metrics</h2>
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="value">{{ "%.2f"|format(basal_area_ha) }}</div>
+            <div class="label">Basal Area (m&sup2;/ha)</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "%.3f"|format(qmd) }}</div>
+            <div class="label">QMD (m)</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "%.1f"|format(loreys_height) }}</div>
+            <div class="label">Lorey's Height (m)</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "%.0f"|format(sdi) }}</div>
+            <div class="label">Stand Density Index</div>
+        </div>
+    </div>
+    {% endif %}
 
     <h2>Tree Measurements</h2>
     <table>
@@ -394,6 +432,22 @@
     </div>
     {% endif %}
 
+    {% if has_taper is defined and has_taper %}
+    <h2>Taper Profiles</h2>
+    <div class="figure">
+        <img src="Taper_Profiles.png" alt="Taper Profiles">
+        <div class="caption">Taper profiles showing diameter at various heights for each measured tree.</div>
+    </div>
+    {% endif %}
+
+    {% if has_crown_map is defined and has_crown_map %}
+    <h2>Crown Projection Map</h2>
+    <div class="figure">
+        <img src="Crown_Projection_Map.png" alt="Crown Projection Map">
+        <div class="caption">Crown projection map showing estimated canopy coverage, stem positions, and tree IDs.</div>
+    </div>
+    {% endif %}
+
     {% if show_histograms and num_trees > 0 %}
     <h2>Distributions</h2>
     <div class="figure">
@@ -411,6 +465,15 @@
     <div class="figure">
         <img src="Tree Volume 2 Distribution.png" alt="Volume 2 Distribution">
         <div class="caption">Tree volume (cone model) distribution.</div>
+    </div>
+    {% endif %}
+
+    {% if photos and photos|length > 0 %}
+    <h2>Field Photos</h2>
+    <div class="photo-grid">
+        {% for photo in photos %}
+        <img src="{{ photo }}" alt="Field photo">
+        {% endfor %}
     </div>
     {% endif %}
 

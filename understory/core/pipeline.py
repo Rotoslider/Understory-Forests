@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -22,6 +23,10 @@ class PipelineStageError(Exception):
         self.user_message = user_message
         self.original_error = original_error
         super().__init__(user_message)
+
+
+class PipelineCancelled(Exception):
+    """Raised when the user cancels a running pipeline."""
 
 
 # Known error patterns → user-friendly translations
@@ -66,6 +71,7 @@ if _scripts_dir not in sys.path:
 def run_pipeline(
     config: ProjectConfig,
     progress_callback: Optional[Callable[[str, float], None]] = None,
+    cancel_event: Optional[threading.Event] = None,
 ) -> dict:
     """Run the FSCT processing pipeline.
 
@@ -73,6 +79,9 @@ def run_pipeline(
         config: Project configuration.
         progress_callback: Optional callback ``(stage_name, fraction)`` for
             progress reporting. ``fraction`` is 0.0–1.0 within each stage.
+        cancel_event: Optional :class:`threading.Event`; when set, the
+            pipeline will raise :class:`PipelineCancelled` before the next
+            stage begins.
 
     Returns:
         dict with keys like ``"tree_data_csv"``, ``"plot_summary_csv"``
@@ -158,10 +167,14 @@ def run_pipeline(
 
     def _run_stage(name: str, func: Callable[[], None]) -> None:
         """Run a pipeline stage with error translation."""
+        if cancel_event and cancel_event.is_set():
+            raise PipelineCancelled("Pipeline cancelled by user")
         try:
             _stage_report(name, 0.0)
             func()
             _stage_report(name, 1.0)
+        except PipelineCancelled:
+            raise
         except PipelineStageError:
             raise
         except Exception as e:
@@ -177,7 +190,9 @@ def run_pipeline(
     if config.segmentation:
         def _segmentation():
             seg = SemanticSegmentation(parameters)
-            seg.inference()
+            def _seg_progress(batch_frac):
+                _stage_report("Semantic Segmentation", batch_frac)
+            seg.inference(progress_callback=_seg_progress)
             del seg
         _run_stage("Semantic Segmentation", _segmentation)
         # Release GPU memory — inference is the only GPU-using stage
@@ -227,6 +242,7 @@ def run_pipeline(
                 project_name=config.project_name,
                 operator=config.operator,
                 notes=config.notes,
+                photos=config.photos if config.photos else None,
             )
             # Move report files to the reports/ subdirectory if it exists
             # (present when running under a project with timestamped runs)

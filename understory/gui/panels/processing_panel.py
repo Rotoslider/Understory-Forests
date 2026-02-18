@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -48,10 +49,15 @@ class PipelineWorker(QThread):
     progress = Signal(str, float)  # stage_name, fraction
     finished = Signal(str)  # output_dir
     error = Signal(str, str)  # short user message, full traceback
+    cancelled = Signal()
 
     def __init__(self, config: ProjectConfig, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self._config = config
+        self._cancel_event = threading.Event()
+
+    def request_stop(self):
+        self._cancel_event.set()
 
     def run(self) -> None:
         import traceback
@@ -59,9 +65,11 @@ class PipelineWorker(QThread):
         import matplotlib
         matplotlib.use("Agg")
         try:
-            from understory.core.pipeline import run_pipeline
-            result = run_pipeline(self._config, progress_callback=self._emit_progress)
+            from understory.core.pipeline import run_pipeline, PipelineStageError, PipelineCancelled
+            result = run_pipeline(self._config, progress_callback=self._emit_progress, cancel_event=self._cancel_event)
             self.finished.emit(result.get("output_dir", ""))
+        except PipelineCancelled:
+            self.cancelled.emit()
         except Exception as e:
             tb = traceback.format_exc()
             from understory.core.pipeline import PipelineStageError
@@ -358,6 +366,17 @@ class ProcessingPanel(QWidget):
         dir_btn.clicked.connect(self._browse_output_dir)
         dir_row.addWidget(dir_btn)
         glayout.addLayout(dir_row)
+        layout.addWidget(group)
+
+        # Photos
+        group = QGroupBox("Field Photos")
+        glayout = QVBoxLayout(group)
+        self._photos_list = QLabel("No photos attached")
+        self._photos_list.setWordWrap(True)
+        glayout.addWidget(self._photos_list)
+        photo_btn = QPushButton("Attach Photos...")
+        photo_btn.clicked.connect(self._attach_photos)
+        glayout.addWidget(photo_btn)
         layout.addWidget(group)
 
         layout.addStretch()
@@ -877,6 +896,22 @@ class ProcessingPanel(QWidget):
         glayout.addLayout(report_row)
         layout.addWidget(group)
 
+        # --- Compare Runs ---
+        group = QGroupBox("Analysis")
+        glayout = QVBoxLayout(group)
+        self._compare_runs_btn = QPushButton("Compare Runs...")
+        self._compare_runs_btn.setToolTip("Compare tree measurements across two pipeline runs")
+        self._compare_runs_btn.setEnabled(False)
+        self._compare_runs_btn.clicked.connect(self._compare_runs)
+        glayout.addWidget(self._compare_runs_btn)
+
+        self._gis_export_btn = QPushButton("Export to GIS...")
+        self._gis_export_btn.setToolTip("Export tree data as GeoJSON or Shapefile")
+        self._gis_export_btn.setEnabled(False)
+        self._gis_export_btn.clicked.connect(self._export_gis)
+        glayout.addWidget(self._gis_export_btn)
+        layout.addWidget(group)
+
         layout.addStretch()
         scroll.setWidget(content)
         self._tabs.addTab(scroll, "Results")
@@ -985,6 +1020,61 @@ class ProcessingPanel(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "PDF Export Error", f"Failed to export PDF: {e}")
 
+    def _compare_runs(self) -> None:
+        """Open comparison dialog for two pipeline runs."""
+        if self._run_combo.count() < 2:
+            QMessageBox.information(self, "Need Two Runs", "At least two pipeline runs are needed for comparison.")
+            return
+        try:
+            from understory.core.comparison import compare_runs, generate_comparison_report
+            # Use current run as run_b, previous run as run_a
+            idx_b = self._run_combo.currentIndex()
+            idx_a = idx_b - 1 if idx_b > 0 else idx_b + 1
+            dir_a = self._run_combo.itemData(idx_a)
+            dir_b = self._run_combo.itemData(idx_b)
+            if not dir_a or not dir_b:
+                return
+            report_path = generate_comparison_report(dir_a, dir_b)
+            if report_path:
+                import webbrowser
+                webbrowser.open(f"file://{report_path}")
+                self._log(f"Comparison report: {report_path}")
+            else:
+                QMessageBox.warning(self, "Comparison Failed", "Could not generate comparison report.")
+        except Exception as e:
+            QMessageBox.critical(self, "Comparison Error", f"Failed to compare runs: {e}")
+
+    def _export_gis(self) -> None:
+        """Export tree data to GIS format."""
+        if not self._results_output_dir:
+            return
+        tree_csv = os.path.join(self._results_output_dir, "tree_data.csv")
+        if not os.path.exists(tree_csv):
+            QMessageBox.warning(self, "No Data", "No tree_data.csv found in the output directory.")
+            return
+        filepath, selected_filter = QFileDialog.getSaveFileName(
+            self, "Export to GIS", "",
+            "GeoJSON (*.geojson);;CSV with Coordinates (*.csv);;All Files (*)",
+        )
+        if not filepath:
+            return
+        try:
+            import pandas as pd
+            tree_data = pd.read_csv(tree_csv)
+            if filepath.endswith(".geojson") or "GeoJSON" in selected_filter:
+                from understory.core.gis_export import export_geojson
+                if not filepath.endswith(".geojson"):
+                    filepath += ".geojson"
+                export_geojson(tree_data, filepath)
+            else:
+                from understory.core.gis_export import export_csv_with_coords
+                if not filepath.endswith(".csv"):
+                    filepath += ".csv"
+                export_csv_with_coords(tree_data, filepath)
+            self._log(f"GIS export saved: {filepath}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export GIS data: {e}")
+
     def _populate_runs(self) -> None:
         """Populate the run selector combo from the project's run history."""
         self._run_combo.blockSignals(True)
@@ -1058,6 +1148,9 @@ class ProcessingPanel(QWidget):
         self._open_report_btn.setEnabled(report_exists)
         self._export_pdf_btn.setEnabled(report_exists)
 
+        self._compare_runs_btn.setEnabled(self._run_combo.count() >= 2)
+        self._gis_export_btn.setEnabled(self._export_tree_btn.isEnabled())
+
         # Switch to Results tab
         self._tabs.setCurrentIndex(self._tabs.count() - 1)
 
@@ -1082,6 +1175,17 @@ class ProcessingPanel(QWidget):
         dirpath = QFileDialog.getExistingDirectory(self, "Select Output Directory")
         if dirpath:
             self._output_dir.setText(dirpath)
+
+    def _attach_photos(self) -> None:
+        """Attach field photos to the project."""
+        filepaths, _ = QFileDialog.getOpenFileNames(
+            self, "Select Field Photos", "",
+            "Images (*.jpg *.jpeg *.png *.tiff *.bmp);;All Files (*)",
+        )
+        if filepaths:
+            self._config.photos = filepaths
+            self._photos_list.setText(f"{len(filepaths)} photo(s) attached")
+            self._log(f"Attached {len(filepaths)} field photo(s)")
 
     def _on_auto_centre_toggled(self, checked: bool) -> None:
         self._centre_x.setEnabled(not checked)
@@ -1161,6 +1265,7 @@ class ProcessingPanel(QWidget):
         config.project_name = self._project_name.text()
         config.operator = self._operator.text()
         config.notes = self._notes.toPlainText()
+        config.photos = getattr(self._config, 'photos', [])
 
         config.preprocess = self._chk_preprocess.isChecked()
         config.segmentation = self._chk_segmentation.isChecked()
@@ -1227,6 +1332,10 @@ class ProcessingPanel(QWidget):
         self._project_name.setText(config.project_name)
         self._operator.setText(config.operator)
         self._notes.setPlainText(config.notes)
+
+        if config.photos:
+            self._photos_list.setText(f"{len(config.photos)} photo(s) attached")
+            self._config.photos = config.photos
 
         self._chk_preprocess.setChecked(config.preprocess)
         self._chk_segmentation.setChecked(config.segmentation)
@@ -1373,20 +1482,17 @@ class ProcessingPanel(QWidget):
         self._worker.progress.connect(self._on_progress)
         self._worker.finished.connect(self._on_finished)
         self._worker.error.connect(self._on_error)
+        self._worker.cancelled.connect(self._on_cancelled)
         self._worker.start()
         self.pipeline_started.emit()
 
     def stop_pipeline(self) -> None:
         """Request the pipeline worker to stop."""
         if self._worker and self._worker.isRunning():
-            self._log("Stopping pipeline (will finish current operation)...")
-            self._worker.terminate()
-            self._worker.wait(5000)
-            self._run_btn.setEnabled(True)
+            self._log("Stopping pipeline (will finish current stage)...")
+            self._worker.request_stop()
             self._stop_btn.setEnabled(False)
-            self._progress_bar.setVisible(False)
-            self._progress_label.setVisible(False)
-            self._log("Pipeline stopped.")
+            # Worker will emit cancelled signal when it exits
         else:
             self._log("No pipeline is running.")
 
@@ -1425,6 +1531,14 @@ class ProcessingPanel(QWidget):
             self._log(f"--- Full Traceback ---\n{traceback_str}")
         self.pipeline_error.emit()
         QMessageBox.critical(self, "Pipeline Error", msg)
+
+    @Slot()
+    def _on_cancelled(self) -> None:
+        self._run_btn.setEnabled(True)
+        self._stop_btn.setEnabled(False)
+        self._progress_bar.setVisible(False)
+        self._progress_label.setVisible(False)
+        self._log("Pipeline cancelled by user.")
 
     def _log(self, msg: str) -> None:
         self._console.append(msg)

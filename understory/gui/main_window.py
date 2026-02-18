@@ -26,7 +26,7 @@ from typing import Optional
 
 import numpy as np
 
-from PySide6.QtCore import Qt, QThread, Signal, Slot, QSize, QTimer, QProcess, QObject
+from PySide6.QtCore import Qt, QThread, Signal, Slot, QSize, QTimer, QProcess, QObject, QSettings
 from PySide6.QtGui import QAction, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -112,6 +112,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1200, 800)
 
         self._current_project_path: Optional[str] = None
+        self._settings = QSettings("Understory", "Understory")
 
         self._load_stylesheet()
         self._setup_icon()
@@ -122,6 +123,7 @@ class MainWindow(QMainWindow):
         # GPU live monitor (started/stopped with pipeline)
         self._gpu_monitor = GpuMonitor(parent=self)
         self._gpu_monitor.updated.connect(self._gpu_label.setText)
+        self.setAcceptDrops(True)
 
     def _load_stylesheet(self) -> None:
         qss_path = Path(__file__).parent.parent / "resources" / "styles" / "understory.qss"
@@ -177,6 +179,12 @@ class MainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
+        self._recent_menu = QMenu("Recent Projects", self)
+        file_menu.addMenu(self._recent_menu)
+        self._update_recent_menu()
+
+        file_menu.addSeparator()
+
         exit_action = QAction("Exit", self)
         exit_action.setShortcut("Ctrl+Q")
         exit_action.triggered.connect(self.close)
@@ -212,6 +220,31 @@ class MainWindow(QMainWindow):
         iso_view_action.triggered.connect(lambda: self._viewer.set_camera_view("iso"))
         view_menu.addAction(iso_view_action)
 
+        view_menu.addSeparator()
+
+        screenshot_action = QAction("Export Screenshot...", self)
+        screenshot_action.setShortcut("Ctrl+Shift+E")
+        screenshot_action.triggered.connect(self._export_screenshot)
+        view_menu.addAction(screenshot_action)
+
+        view_menu.addSeparator()
+
+        undo_action = QAction("Undo Prepare", self)
+        undo_action.setShortcut("Ctrl+Z")
+        undo_action.triggered.connect(self._undo_prepare)
+        view_menu.addAction(undo_action)
+
+        redo_action = QAction("Redo Prepare", self)
+        redo_action.setShortcut("Ctrl+Shift+Z")
+        redo_action.triggered.connect(self._redo_prepare)
+        view_menu.addAction(redo_action)
+
+        view_menu.addSeparator()
+
+        flythrough_action = QAction("Flythrough Editor...", self)
+        flythrough_action.triggered.connect(self._open_flythrough)
+        view_menu.addAction(flythrough_action)
+
         # Tools menu
         tools_menu = menubar.addMenu("Tools")
 
@@ -234,6 +267,35 @@ class MainWindow(QMainWindow):
         label_editor_action = QAction("Label Editor...", self)
         label_editor_action.triggered.connect(self._open_label_editor)
         tools_menu.addAction(label_editor_action)
+
+        tools_menu.addSeparator()
+
+        batch_action = QAction("Batch Processing...", self)
+        batch_action.triggered.connect(self._open_batch)
+        tools_menu.addAction(batch_action)
+
+        growth_action = QAction("Growth Dashboard...", self)
+        growth_action.triggered.connect(self._open_growth_dashboard)
+        tools_menu.addAction(growth_action)
+
+        allometry_action = QAction("Allometric Equations...", self)
+        allometry_action.triggered.connect(self._open_allometry)
+        tools_menu.addAction(allometry_action)
+
+        tools_menu.addSeparator()
+
+        measure_menu = QMenu("Measure", self)
+        distance_action = QAction("Distance", self)
+        distance_action.triggered.connect(lambda: self._start_measure("distance"))
+        measure_menu.addAction(distance_action)
+        height_action = QAction("Height", self)
+        height_action.triggered.connect(lambda: self._start_measure("height"))
+        measure_menu.addAction(height_action)
+        tools_menu.addMenu(measure_menu)
+
+        compare_clouds_action = QAction("Compare Point Clouds...", self)
+        compare_clouds_action.triggered.connect(self._compare_clouds)
+        tools_menu.addAction(compare_clouds_action)
 
         # Help menu
         help_menu = menubar.addMenu("Help")
@@ -341,6 +403,7 @@ class MainWindow(QMainWindow):
             self._processing_panel.load_project(filepath)
             self._current_project_path = filepath
             self._update_title()
+            self._add_recent_project(filepath)
 
     def _save_project(self) -> None:
         if self._current_project_path:
@@ -482,6 +545,7 @@ class MainWindow(QMainWindow):
                     colors = pc[:, color_cols]
 
             self._viewer.load_points(points, colors=colors)
+            self._add_recent_project(filepath)
             self._status_label.setText(f"Loaded: {os.path.basename(filepath)} ({points.shape[0]:,} points)")
 
         except Exception as e:
@@ -794,6 +858,154 @@ class MainWindow(QMainWindow):
         editor.resize(1200, 800)
         editor.show()
         self._label_editor = editor
+
+    # --- Screenshot Export ---
+
+    def _export_screenshot(self) -> None:
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, "Export Screenshot", "",
+            "PNG (*.png);;JPEG (*.jpg);;TIFF (*.tiff);;All Files (*)",
+        )
+        if filepath:
+            try:
+                self._viewer._plotter.screenshot(filepath, scale=2)
+                self._status_label.setText(f"Screenshot saved: {os.path.basename(filepath)}")
+            except Exception as e:
+                QMessageBox.critical(self, "Screenshot Error", f"Failed to save screenshot: {e}")
+
+    # --- Recent Projects ---
+
+    def _update_recent_menu(self) -> None:
+        self._recent_menu.clear()
+        recent = self._settings.value("recent_projects", [])
+        if not recent:
+            action = QAction("(No recent projects)", self)
+            action.setEnabled(False)
+            self._recent_menu.addAction(action)
+            return
+        for path in recent:
+            action = QAction(os.path.basename(path), self)
+            action.setToolTip(path)
+            action.setData(path)
+            action.triggered.connect(lambda checked=False, p=path: self._open_recent(p))
+            self._recent_menu.addAction(action)
+
+    def _add_recent_project(self, filepath: str) -> None:
+        recent = self._settings.value("recent_projects", [])
+        if not isinstance(recent, list):
+            recent = []
+        if filepath in recent:
+            recent.remove(filepath)
+        recent.insert(0, filepath)
+        recent = recent[:10]
+        self._settings.setValue("recent_projects", recent)
+        self._update_recent_menu()
+
+    def _open_recent(self, filepath: str) -> None:
+        if os.path.exists(filepath):
+            if filepath.endswith(('.yaml', '.yml')):
+                self._processing_panel.load_project(filepath)
+                self._current_project_path = filepath
+                self._update_title()
+            else:
+                self._processing_panel.set_input_file(filepath)
+            self._add_recent_project(filepath)
+        else:
+            QMessageBox.warning(self, "File Not Found", f"Could not find: {filepath}")
+
+    # --- Drag-and-Drop ---
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                path = url.toLocalFile().lower()
+                if path.endswith(('.las', '.laz', '.pcd', '.yaml', '.yml')):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dropEvent(self, event) -> None:
+        for url in event.mimeData().urls():
+            filepath = url.toLocalFile()
+            lower = filepath.lower()
+            if lower.endswith(('.yaml', '.yml')):
+                self._processing_panel.load_project(filepath)
+                self._current_project_path = filepath
+                self._update_title()
+                self._add_recent_project(filepath)
+            elif lower.endswith(('.las', '.laz', '.pcd')):
+                self._processing_panel.set_input_file(filepath)
+            break  # Only handle the first file
+
+    # --- Undo/Redo ---
+
+    def _undo_prepare(self) -> None:
+        if hasattr(self._viewer, 'undo') and self._viewer.undo():
+            self._status_label.setText("Undo")
+        else:
+            self._status_label.setText("Nothing to undo")
+
+    def _redo_prepare(self) -> None:
+        if hasattr(self._viewer, 'redo') and self._viewer.redo():
+            self._status_label.setText("Redo")
+        else:
+            self._status_label.setText("Nothing to redo")
+
+    # --- Phase 3 Tools ---
+
+    def _open_batch(self) -> None:
+        try:
+            from understory.gui.panels.batch_panel import BatchPanel
+            dlg = BatchPanel(self._processing_panel._build_config(), parent=self)
+            dlg.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not open batch processing: {e}")
+
+    def _open_growth_dashboard(self) -> None:
+        try:
+            from understory.gui.panels.growth_panel import GrowthPanel
+            project_dir = None
+            if self._current_project_path:
+                project_dir = str(Path(self._current_project_path).parent)
+            dlg = GrowthPanel(project_dir=project_dir, parent=self)
+            dlg.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not open growth dashboard: {e}")
+
+    def _open_allometry(self) -> None:
+        try:
+            from understory.gui.panels.allometry_panel import AllometryPanel
+            output_dir = None
+            if hasattr(self._processing_panel, '_results_output_dir'):
+                output_dir = self._processing_panel._results_output_dir
+            dlg = AllometryPanel(output_dir=output_dir, parent=self)
+            dlg.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not open allometry panel: {e}")
+
+    def _start_measure(self, mode: str) -> None:
+        if hasattr(self._viewer, 'start_measurement'):
+            self._viewer.start_measurement(mode)
+            self._status_label.setText(f"Measure mode: {mode} — click two points")
+        else:
+            self._status_label.setText("Measurement tools not available in this viewer version")
+
+    def _compare_clouds(self) -> None:
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Open Second Point Cloud for Comparison", "",
+            "Point Clouds (*.las *.laz *.pcd);;All Files (*)",
+        )
+        if filepath and hasattr(self._viewer, 'compare_with_cloud'):
+            self._viewer.compare_with_cloud(filepath)
+            self._status_label.setText(f"Comparing with: {os.path.basename(filepath)}")
+
+    def _open_flythrough(self) -> None:
+        try:
+            from understory.gui.panels.flythrough import FlythroughEditor
+            dlg = FlythroughEditor(plotter=self._viewer._plotter, parent=self)
+            dlg.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not open flythrough editor: {e}")
 
     def set_progress(self, stage: str, fraction: float) -> None:
         """Update the status bar progress."""

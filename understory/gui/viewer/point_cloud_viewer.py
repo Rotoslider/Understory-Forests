@@ -5,6 +5,7 @@ Uses PyVista + pyvistaqt for rendering inside PySide6.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
@@ -13,7 +14,7 @@ import numpy as np
 try:
     import pyvista as pv
     from pyvistaqt import QtInteractor
-    from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QLabel, QPushButton
+    from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QLabel, QPushButton, QDoubleSpinBox
     from PySide6.QtCore import Signal
     HAS_PYVISTA = True
 except ImportError:
@@ -25,6 +26,13 @@ class ColorMode(Enum):
     HEIGHT = "Height Gradient"
     CLASSIFICATION = "Classification"
     TREE_ID = "Tree ID"
+    COMPARISON = "Comparison"
+
+
+class MeasureMode(Enum):
+    OFF = "off"
+    DISTANCE = "distance"
+    HEIGHT = "height"
 
 
 # Classification colors (terrain, vegetation, CWD, stem)
@@ -42,6 +50,16 @@ LOD_LEVELS = {
     1: 5_000_000,    # medium: ~5M points
     2: 20_000_000,   # close: ~20M points
 }
+
+
+@dataclass
+class PrepareSnapshot:
+    """Snapshot of viewer state for undo/redo."""
+    points: np.ndarray
+    colors: Optional[np.ndarray]
+    labels: Optional[np.ndarray]
+    tree_ids: Optional[np.ndarray]
+    description: str
 
 
 class PointCloudViewer(QWidget):
@@ -73,6 +91,22 @@ class PointCloudViewer(QWidget):
         self._plot_circle_widget_active: bool = False
         self._dragging_circle: bool = False
         self._circle_actor = None
+
+        self._undo_stack: list[PrepareSnapshot] = []
+        self._redo_stack: list[PrepareSnapshot] = []
+        self._max_undo: int = 5
+
+        self._slice_mode: str = "off"  # "off", "horizontal", "vertical_x", "vertical_y"
+        self._slice_pos: float = 0.0
+        self._slice_thickness: float = 2.0
+
+        # Measurement state
+        self._measure_mode: MeasureMode = MeasureMode.OFF
+        self._measure_point_a: Optional[np.ndarray] = None
+        self._measure_actors: list = []
+
+        # Comparison state
+        self._comparison_distances: Optional[np.ndarray] = None
 
         self._setup_ui()
 
@@ -120,6 +154,36 @@ class PointCloudViewer(QWidget):
             btn = QPushButton(label)
             btn.clicked.connect(lambda checked=False, v=view_id: self.set_camera_view(v))
             toolbar.addWidget(btn)
+
+        toolbar.addWidget(QLabel("|"))
+        toolbar.addWidget(QLabel("Slice:"))
+        self._slice_combo = QComboBox()
+        self._slice_combo.addItem("Off", "off")
+        self._slice_combo.addItem("Horizontal", "horizontal")
+        self._slice_combo.addItem("Vertical X", "vertical_x")
+        self._slice_combo.addItem("Vertical Y", "vertical_y")
+        self._slice_combo.currentIndexChanged.connect(self._on_slice_mode_changed)
+        toolbar.addWidget(self._slice_combo)
+
+        self._slice_pos_spin = QDoubleSpinBox()
+        self._slice_pos_spin.setRange(-1e6, 1e6)
+        self._slice_pos_spin.setDecimals(2)
+        self._slice_pos_spin.setSingleStep(0.5)
+        self._slice_pos_spin.setPrefix("Pos: ")
+        self._slice_pos_spin.setEnabled(False)
+        self._slice_pos_spin.valueChanged.connect(self._on_slice_pos_changed)
+        toolbar.addWidget(self._slice_pos_spin)
+
+        self._slice_thick_spin = QDoubleSpinBox()
+        self._slice_thick_spin.setRange(0.1, 100)
+        self._slice_thick_spin.setDecimals(1)
+        self._slice_thick_spin.setSingleStep(0.5)
+        self._slice_thick_spin.setValue(2.0)
+        self._slice_thick_spin.setPrefix("Thick: ")
+        self._slice_thick_spin.setSuffix("m")
+        self._slice_thick_spin.setEnabled(False)
+        self._slice_thick_spin.valueChanged.connect(self._on_slice_thick_changed)
+        toolbar.addWidget(self._slice_thick_spin)
 
         self._reset_btn = QPushButton("Reset View")
         self._reset_btn.clicked.connect(self._reset_view)
@@ -188,6 +252,15 @@ class PointCloudViewer(QWidget):
         else:
             eligible = np.arange(self._points_full.shape[0])
 
+        # Apply cross-section slice filter
+        axis = self._get_slice_axis()
+        if axis is not None and self._points_full is not None:
+            pts = self._points_full[eligible]
+            half = self._slice_thickness / 2
+            mask = np.abs(pts[:, axis] - self._slice_pos) < half
+            eligible = eligible[mask]
+            n = len(eligible)
+
         n = len(eligible)
 
         # Determine appropriate LOD level
@@ -242,18 +315,54 @@ class PointCloudViewer(QWidget):
         elif scalars is not None:
             cloud["values"] = scalars
             kwargs["scalars"] = "values"
-            kwargs["cmap"] = "viridis"
-            kwargs["scalar_bar_args"] = {
-                "color": "#ffffff",
-                "title_font_size": 14,
-                "label_font_size": 12,
-                "shadow": True,
-                "fmt": "%.1f",
-            }
+            if self._color_mode == ColorMode.COMPARISON:
+                kwargs["cmap"] = "RdYlBu_r"  # blue=close, red=far
+                kwargs["scalar_bar_args"] = {
+                    "color": "#ffffff",
+                    "title": "Distance (m)",
+                    "title_font_size": 14,
+                    "label_font_size": 12,
+                    "shadow": True,
+                    "fmt": "%.2f",
+                }
+            else:
+                kwargs["cmap"] = "viridis"
+                kwargs["scalar_bar_args"] = {
+                    "color": "#ffffff",
+                    "title_font_size": 14,
+                    "label_font_size": 12,
+                    "shadow": True,
+                    "fmt": "%.1f",
+                }
         else:
             kwargs["color"] = "#4a9e7e"
 
         self._plotter.add_mesh(cloud, **kwargs)
+
+        # Add legend/annotation for current color mode
+        if self._color_mode == ColorMode.CLASSIFICATION and self._labels is not None:
+            CLASS_NAMES = {0: "Noise", 1: "Terrain", 2: "Vegetation", 3: "CWD", 4: "Stem"}
+            legend_entries = []
+            unique_labels = np.unique(self._labels[self._lod_indices].astype(int))
+            for lbl in sorted(unique_labels):
+                if lbl in CLASS_COLORS:
+                    name = CLASS_NAMES.get(lbl, f"Class {lbl}")
+                    legend_entries.append([name, CLASS_COLORS[lbl]])
+            if legend_entries:
+                self._plotter.add_legend(
+                    legend_entries,
+                    bcolor=(0.1, 0.18, 0.15, 0.8),
+                    face="circle",
+                    size=(0.15, 0.2),
+                )
+        elif self._color_mode == ColorMode.TREE_ID and self._tree_ids is not None:
+            self._plotter.add_text(
+                "Colored by Tree ID",
+                position="upper_right",
+                font_size=10,
+                color="#a8d8c0",
+                shadow=True,
+            )
 
         # Re-add plot circle if set
         self._circle_actor = None
@@ -306,6 +415,11 @@ class PointCloudViewer(QWidget):
         elif self._color_mode == ColorMode.TREE_ID:
             if self._tree_ids is not None:
                 return self._tree_ids[idx].astype(np.float32)
+            return None
+
+        elif self._color_mode == ColorMode.COMPARISON:
+            if self._comparison_distances is not None:
+                return self._comparison_distances[idx].astype(np.float32)
             return None
 
         return None
@@ -399,12 +513,26 @@ class PointCloudViewer(QWidget):
         self._plotter.clear()
         self._point_count_label.setText("No data loaded")
 
+    def export_screenshot(self, filepath: str, scale: int = 2) -> str:
+        """Save a screenshot of the current view.
+
+        Args:
+            filepath: Output file path (PNG, JPEG, or TIFF).
+            scale: Resolution multiplier (default 2x).
+
+        Returns:
+            The filepath that was written.
+        """
+        self._plotter.screenshot(filepath, transparent_background=False, scale=scale)
+        return filepath
+
     # --- Crop outliers ---
 
     def _crop_to_bounds(self) -> None:
         """Remove outlier points beyond the 99.5th percentile per axis."""
         if self._points_full is None:
             return
+        self.push_undo("Crop outliers")
 
         pts = self._points_full
         mask = np.ones(pts.shape[0], dtype=bool)
@@ -472,6 +600,7 @@ class PointCloudViewer(QWidget):
         """
         if self._points_original is None:
             return
+        self.push_undo(f"Axis swap: {mode}")
 
         if mode == "reset":
             self._points_full = self._points_original.copy()
@@ -537,6 +666,124 @@ class PointCloudViewer(QWidget):
         self._dragging_circle = False
         self.plot_centre_dragged.emit(cx, cy)
 
+    # --- Undo / Redo ---
+
+    def push_undo(self, description: str = "") -> None:
+        """Save the current state to the undo stack before a destructive operation."""
+        if self._points_full is None:
+            return
+        snapshot = PrepareSnapshot(
+            points=self._points_full.copy(),
+            colors=self._colors_full.copy() if self._colors_full is not None else None,
+            labels=self._labels.copy() if self._labels is not None else None,
+            tree_ids=self._tree_ids.copy() if self._tree_ids is not None else None,
+            description=description,
+        )
+        self._undo_stack.append(snapshot)
+        if len(self._undo_stack) > self._max_undo:
+            self._undo_stack.pop(0)
+        self._redo_stack.clear()
+
+    def undo(self) -> Optional[str]:
+        """Restore the previous state. Returns description of undone action, or None."""
+        if not self._undo_stack:
+            return None
+        # Save current state to redo stack
+        if self._points_full is not None:
+            redo_snap = PrepareSnapshot(
+                points=self._points_full.copy(),
+                colors=self._colors_full.copy() if self._colors_full is not None else None,
+                labels=self._labels.copy() if self._labels is not None else None,
+                tree_ids=self._tree_ids.copy() if self._tree_ids is not None else None,
+                description="",
+            )
+            self._redo_stack.append(redo_snap)
+
+        snap = self._undo_stack.pop()
+        self._points_full = snap.points
+        self._colors_full = snap.colors
+        self._labels = snap.labels
+        self._tree_ids = snap.tree_ids
+        self._crop_mask = None
+        self._build_lod()
+        self._render()
+        return snap.description
+
+    def redo(self) -> Optional[str]:
+        """Re-apply the last undone action. Returns description, or None."""
+        if not self._redo_stack:
+            return None
+        # Save current to undo
+        if self._points_full is not None:
+            undo_snap = PrepareSnapshot(
+                points=self._points_full.copy(),
+                colors=self._colors_full.copy() if self._colors_full is not None else None,
+                labels=self._labels.copy() if self._labels is not None else None,
+                tree_ids=self._tree_ids.copy() if self._tree_ids is not None else None,
+                description="",
+            )
+            self._undo_stack.append(undo_snap)
+
+        snap = self._redo_stack.pop()
+        self._points_full = snap.points
+        self._colors_full = snap.colors
+        self._labels = snap.labels
+        self._tree_ids = snap.tree_ids
+        self._crop_mask = None
+        self._build_lod()
+        self._render()
+        return snap.description
+
+    @property
+    def can_undo(self) -> bool:
+        return len(self._undo_stack) > 0
+
+    @property
+    def can_redo(self) -> bool:
+        return len(self._redo_stack) > 0
+
+    # --- Cross-section slice ---
+
+    def _on_slice_mode_changed(self, index: int) -> None:
+        mode = self._slice_combo.itemData(index)
+        self._slice_mode = mode
+        enabled = mode != "off"
+        self._slice_pos_spin.setEnabled(enabled)
+        self._slice_thick_spin.setEnabled(enabled)
+
+        # Auto-set position to midpoint of point cloud along slice axis
+        if enabled and self._points_full is not None:
+            axis = self._get_slice_axis()
+            if axis is not None:
+                mid = float(np.median(self._points_full[:, axis]))
+                self._slice_pos_spin.blockSignals(True)
+                self._slice_pos_spin.setValue(mid)
+                self._slice_pos_spin.blockSignals(False)
+                self._slice_pos = mid
+
+        self._build_lod()
+        self._render(preserve_camera=True)
+
+    def _on_slice_pos_changed(self, value: float) -> None:
+        self._slice_pos = value
+        self._build_lod()
+        self._render(preserve_camera=True)
+
+    def _on_slice_thick_changed(self, value: float) -> None:
+        self._slice_thickness = value
+        self._build_lod()
+        self._render(preserve_camera=True)
+
+    def _get_slice_axis(self) -> Optional[int]:
+        """Return the axis index for the current slice mode, or None."""
+        if self._slice_mode == "horizontal":
+            return 2  # Z axis
+        elif self._slice_mode == "vertical_x":
+            return 0  # X axis
+        elif self._slice_mode == "vertical_y":
+            return 1  # Y axis
+        return None
+
     # --- Camera views ---
 
     def set_camera_view(self, view: str) -> None:
@@ -553,3 +800,133 @@ class PointCloudViewer(QWidget):
             self._plotter.view_yz()
         elif view == "iso":
             self._plotter.view_isometric()
+
+    # --- Measurement tools ---
+
+    def start_measurement(self, mode: str) -> None:
+        """Start a measurement interaction.
+
+        Args:
+            mode: One of 'distance', 'height'.
+        """
+        self.cancel_measurement()
+        try:
+            self._measure_mode = MeasureMode(mode)
+        except ValueError:
+            return
+        self._measure_point_a = None
+        self._plotter.enable_surface_point_picking(
+            callback=self._on_measure_pick,
+            show_message=False,
+            show_point=True,
+            color="yellow",
+            point_size=12,
+            picker="cell",
+        )
+
+    def cancel_measurement(self) -> None:
+        """Cancel active measurement and clear visual markers."""
+        if self._measure_mode != MeasureMode.OFF:
+            self._plotter.disable_picking()
+        self._measure_mode = MeasureMode.OFF
+        self._measure_point_a = None
+        for actor in self._measure_actors:
+            try:
+                self._plotter.remove_actor(actor)
+            except Exception:
+                pass
+        self._measure_actors.clear()
+        self._plotter.render()
+
+    def _on_measure_pick(self, point: np.ndarray, *_args) -> None:
+        """Handle a point pick during measurement."""
+        if point is None or len(point) < 3:
+            return
+        pt = np.asarray(point[:3], dtype=float)
+
+        if self._measure_point_a is None:
+            # First point
+            self._measure_point_a = pt
+            return
+
+        # Second point — compute and display
+        a = self._measure_point_a
+        b = pt
+
+        if self._measure_mode == MeasureMode.DISTANCE:
+            value = float(np.linalg.norm(b - a))
+            label = f"{value:.2f} m"
+        elif self._measure_mode == MeasureMode.HEIGHT:
+            value = abs(float(b[2] - a[2]))
+            label = f"dZ = {value:.2f} m"
+        else:
+            label = ""
+
+        # Draw measurement line
+        line = pv.Line(a, b)
+        actor_line = self._plotter.add_mesh(line, color="yellow", line_width=3)
+        self._measure_actors.append(actor_line)
+
+        # Draw label at midpoint
+        mid = (a + b) / 2.0
+        actor_label = self._plotter.add_point_labels(
+            pv.PolyData(mid.reshape(1, 3)),
+            [label],
+            font_size=16,
+            text_color="yellow",
+            point_color="yellow",
+            point_size=0,
+            shape=None,
+            render_points_as_spheres=False,
+            always_visible=True,
+        )
+        self._measure_actors.append(actor_label)
+        self._plotter.render()
+
+        # Reset for next measurement (keep mode active)
+        self._measure_point_a = None
+
+    # --- Point cloud comparison ---
+
+    def compare_with_cloud(self, filepath: str) -> None:
+        """Load a second point cloud and color by nearest-neighbor distance.
+
+        Args:
+            filepath: Path to the comparison point cloud file.
+        """
+        if self._points_full is None:
+            return
+
+        from scipy.spatial import cKDTree
+        from tools import load_file
+
+        other_pc, _ = load_file(
+            filepath,
+            headers_of_interest=["x", "y", "z", "red", "green", "blue"],
+        )
+        other_xyz = other_pc[:, :3].astype(np.float32)
+
+        # Build KD-tree of the currently loaded cloud
+        tree = cKDTree(self._points_full)
+        distances, _ = tree.query(other_xyz, k=1)
+
+        # Also compute distances from current cloud to the other cloud
+        other_tree = cKDTree(other_xyz)
+        dist_self, _ = other_tree.query(self._points_full, k=1)
+
+        self._comparison_distances = dist_self
+        self._color_mode = ColorMode.COMPARISON
+        # Update combo without triggering re-render
+        for i in range(self._color_combo.count()):
+            if self._color_combo.itemData(i) == ColorMode.COMPARISON:
+                self._color_combo.blockSignals(True)
+                self._color_combo.setCurrentIndex(i)
+                self._color_combo.blockSignals(False)
+                break
+        else:
+            self._color_combo.blockSignals(True)
+            self._color_combo.addItem(ColorMode.COMPARISON.value, ColorMode.COMPARISON)
+            self._color_combo.setCurrentIndex(self._color_combo.count() - 1)
+            self._color_combo.blockSignals(False)
+
+        self._render(preserve_camera=True)

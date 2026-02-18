@@ -96,7 +96,7 @@ class SemanticSegmentation:
             [float(self.plot_summary["Plot Centre X"].iloc[0]), 
              float(self.plot_summary["Plot Centre Y"].iloc[0])]
         ]
-    def inference(self):
+    def inference(self, progress_callback=None):
         self.sem_seg_start_time = time.time()
         test_dataset = TestingDataset(
             root_dir=self.working_dir, points_per_box=self.parameters["max_points_per_box"], device=self.device
@@ -125,6 +125,8 @@ class SemanticSegmentation:
             output_list = []
             for i, data in enumerate(test_loader):
                 print("\r" + str(i * self.parameters["batch_size"]) + "/" + str(num_boxes))
+                if progress_callback is not None:
+                    progress_callback((i + 1) * self.parameters["batch_size"] / max(num_boxes, 1))
                 data = data.to(self.device)
                 out = model(data)
                 out = out.permute(2, 1, 0).squeeze()

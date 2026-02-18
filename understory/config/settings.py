@@ -139,6 +139,7 @@ class ProjectConfig:
     project_name: str = ""
     operator: str = ""
     notes: str = ""
+    photos: list[str] = field(default_factory=list)  # attached field photo paths
 
     # Input
     point_cloud_filename: str = ""

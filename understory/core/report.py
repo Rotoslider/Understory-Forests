@@ -36,6 +36,7 @@ def generate_report(
     notes: str = "",
     show_stem_map: bool = True,
     show_histograms: bool = True,
+    photos: list[str] | None = None,
 ) -> str:
     """Generate a branded HTML report from pipeline outputs.
 
@@ -47,6 +48,7 @@ def generate_report(
         notes: Optional notes text.
         show_stem_map: Whether to include the stem map image.
         show_histograms: Whether to include histogram images.
+        photos: Optional list of field photo file paths to include.
 
     Returns:
         Path to the generated HTML report.
@@ -63,6 +65,12 @@ def generate_report(
 
     # Generate stem map with brand colors
     _generate_branded_stem_map(output_dir, plot_summary, tree_data)
+
+    # Generate taper profile chart if data exists
+    has_taper = _generate_taper_chart(output_dir, tree_data)
+
+    # Generate crown projection map
+    has_crown_map = _generate_crown_map(output_dir, plot_summary, tree_data)
 
     # Build template context
     filename = os.path.basename(point_cloud_filename)
@@ -104,6 +112,45 @@ def generate_report(
             "trees": [],
         })
 
+    # Stand metrics (computed from tree_data)
+    if num_trees > 0 and "DBH" in tree_data.columns:
+        dbh_vals = tree_data["DBH"].values
+        plot_area_ha = context["plot_area"]  # already in hectares
+
+        # Basal Area (m2/ha)
+        ba_per_tree = np.pi * (dbh_vals / 2) ** 2  # m2
+        total_ba = float(np.sum(ba_per_tree))
+        basal_area_ha = total_ba / plot_area_ha if plot_area_ha > 0 else 0
+
+        # Quadratic Mean Diameter
+        qmd = float(np.sqrt(np.mean(dbh_vals ** 2)))
+
+        # Lorey's Height = sum(Height_i * BA_i) / sum(BA_i)
+        if "Height" in tree_data.columns:
+            loreys_height = float(np.sum(tree_data["Height"].values * ba_per_tree) / total_ba) if total_ba > 0 else 0
+        else:
+            loreys_height = 0
+
+        # Stand Density Index = stems_per_ha * (QMD_cm / 25.4)^1.605
+        stems_per_ha = context["stems_per_ha"]
+        qmd_cm = qmd * 100  # convert m to cm
+        sdi = stems_per_ha * (qmd_cm / 25.4) ** 1.605 if qmd_cm > 0 else 0
+
+        context.update({
+            "basal_area_ha": basal_area_ha,
+            "qmd": qmd,
+            "loreys_height": loreys_height,
+            "sdi": sdi,
+        })
+    else:
+        context.update({
+            "basal_area_ha": 0, "qmd": 0, "loreys_height": 0, "sdi": 0,
+        })
+
+    # Taper and crown map flags
+    context["has_taper"] = has_taper
+    context["has_crown_map"] = has_crown_map
+
     # Point cloud statistics
     context["num_points_original"] = int(plot_summary.get("Num Points Original PC", pd.Series([0])).iloc[0])
     context["num_points_trimmed"] = int(plot_summary.get("Num Points Trimmed PC", pd.Series([0])).iloc[0])
@@ -132,6 +179,18 @@ def generate_report(
         logo_dest = output_dir / "understory-logo.png"
         shutil.copy2(logo_src, logo_dest)
         context["logo_path"] = "understory-logo.png"
+
+    # Copy field photos if provided
+    photo_filenames = []
+    if photos:
+        import shutil as _shutil
+        for photo_path in photos:
+            p = Path(photo_path)
+            if p.exists():
+                dest = output_dir / p.name
+                _shutil.copy2(p, dest)
+                photo_filenames.append(p.name)
+    context["photos"] = photo_filenames
 
     # Render template
     template_dir = str(Path(__file__).parent.parent / "resources")
@@ -349,3 +408,122 @@ def _generate_branded_stem_map(
         facecolor="white",
     )
     plt.close(fig)
+
+
+def _generate_taper_chart(output_dir: Path, tree_data: pd.DataFrame) -> bool:
+    """Generate taper profile chart if taper_data.csv exists. Returns True if generated."""
+    taper_path = output_dir / "taper_data.csv"
+    if not taper_path.exists():
+        return False
+
+    try:
+        taper_df = pd.read_csv(taper_path)
+    except Exception:
+        return False
+
+    if taper_df.empty or "TreeId" not in taper_df.columns:
+        return False
+
+    # Columns are: TreeId, then height increments (0.0, 0.2, 0.4, ...)
+    height_cols = [c for c in taper_df.columns if c != "TreeId"]
+    if not height_cols:
+        return False
+
+    try:
+        heights = [float(c) for c in height_cols]
+    except ValueError:
+        return False
+
+    fig, ax = plt.subplots(figsize=(7, 6))
+    ax.set_title("Taper Profiles", fontsize=14, color=BRAND_COLORS["dark_forest"], fontweight="bold")
+    ax.set_xlabel("Diameter (m)", fontsize=11)
+    ax.set_ylabel("Height (m)", fontsize=11)
+
+    # Color cycle from brand palette
+    colors = [BRAND_COLORS["dark_forest"], BRAND_COLORS["medium_forest"],
+              BRAND_COLORS["medium_green"], BRAND_COLORS["light_mint"],
+              "#e67e22", "#3498db", "#9b59b6", "#e74c3c"]
+
+    for i, (_, row) in enumerate(taper_df.iterrows()):
+        tree_id = int(row["TreeId"])
+        diameters = [float(row[c]) if pd.notna(row[c]) and float(row[c]) > 0 else np.nan for c in height_cols]
+        color = colors[i % len(colors)]
+        ax.plot(diameters, heights, marker=".", markersize=3, linewidth=1.5,
+                color=color, label=f"Tree {tree_id}", alpha=0.8)
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color(BRAND_COLORS["light_mint"])
+    ax.spines["bottom"].set_color(BRAND_COLORS["light_mint"])
+
+    if len(taper_df) <= 15:
+        ax.legend(fontsize=7, loc="upper right", framealpha=0.9)
+
+    fig.savefig(output_dir / "Taper_Profiles.png", dpi=200, bbox_inches="tight", pad_inches=0.1, facecolor="white")
+    plt.close(fig)
+    return True
+
+
+def _generate_crown_map(output_dir: Path, plot_summary: pd.DataFrame, tree_data: pd.DataFrame) -> bool:
+    """Generate crown projection map. Returns True if generated."""
+    if tree_data.empty:
+        return False
+
+    required = ["Crown_mean_x", "Crown_mean_y"]
+    if not all(c in tree_data.columns for c in required):
+        return False
+
+    plot_centre_x = float(plot_summary["Plot Centre X"].iloc[0])
+    plot_centre_y = float(plot_summary["Plot Centre Y"].iloc[0])
+    plot_radius = float(plot_summary["Plot Radius"].iloc[0])
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.set_title("Crown Projection Map", fontsize=16, color=BRAND_COLORS["dark_forest"], fontweight="bold", pad=12)
+    ax.set_xlabel(f"Easting + {plot_centre_x:.2f} (m)", fontsize=11)
+    ax.set_ylabel(f"Northing + {plot_centre_y:.2f} (m)", fontsize=11)
+    ax.set_aspect("equal")
+
+    if plot_radius > 0:
+        ax.set_facecolor("#f5f5f0")
+        circle_face = plt.Circle(xy=(0, 0), radius=plot_radius, facecolor="white", edgecolor=None, zorder=1)
+        ax.add_patch(circle_face)
+        circle_outline = plt.Circle(xy=(0, 0), radius=plot_radius, fill=False, edgecolor=BRAND_COLORS["dark_forest"], linewidth=2, zorder=8)
+        ax.add_patch(circle_outline)
+
+    # Color cycle
+    colors = [BRAND_COLORS["medium_green"], BRAND_COLORS["medium_forest"],
+              "#3498db", "#e67e22", "#9b59b6", "#e74c3c", "#1abc9c", "#f1c40f"]
+
+    for i, (_, row) in enumerate(tree_data.iterrows()):
+        cx = float(row["Crown_mean_x"]) - plot_centre_x
+        cy = float(row["Crown_mean_y"]) - plot_centre_y
+
+        # Estimate crown radius from Crown_area if available, else from DBH
+        if "Crown_area" in tree_data.columns and pd.notna(row.get("Crown_area")) and float(row["Crown_area"]) > 0:
+            crown_r = float(np.sqrt(float(row["Crown_area"]) / np.pi))
+        elif "DBH" in tree_data.columns and pd.notna(row.get("DBH")):
+            crown_r = float(row["DBH"]) * 10  # rough estimate
+        else:
+            crown_r = 1.0
+
+        color = colors[i % len(colors)]
+        crown_circle = plt.Circle(xy=(cx, cy), radius=crown_r, facecolor=color, edgecolor=BRAND_COLORS["dark_forest"], linewidth=0.8, alpha=0.3, zorder=5)
+        ax.add_patch(crown_circle)
+
+    # Plot stem positions
+    if "x_tree_base" in tree_data.columns:
+        x_base = tree_data["x_tree_base"].values - plot_centre_x
+        y_base = tree_data["y_tree_base"].values - plot_centre_y
+        tree_ids = tree_data["TreeId"].values
+        ax.scatter(x_base, y_base, marker="o", s=30, facecolor=BRAND_COLORS["dark_forest"], edgecolor="white", linewidth=0.8, zorder=7)
+        for j in range(len(x_base)):
+            ax.annotate(str(int(tree_ids[j])), (x_base[j], y_base[j]), textcoords="offset points", xytext=(4, 4), fontsize=7, color=BRAND_COLORS["dark_forest"], zorder=9)
+
+    ax.scatter([0], [0], marker="+", s=80, c=BRAND_COLORS["dark_forest"], linewidth=2, zorder=10)
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    fig.savefig(output_dir / "Crown_Projection_Map.png", dpi=200, bbox_inches="tight", pad_inches=0.1, facecolor="white")
+    plt.close(fig)
+    return True
