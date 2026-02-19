@@ -129,7 +129,10 @@ def load_file(
 
     if file_extension in (".las", ".laz"):
         try:
-            inFile = laspy.read(filename)
+            if file_extension == ".laz":
+                inFile = laspy.read(filename, laz_backend=laspy.LazBackend.LazrsParallel)
+            else:
+                inFile = laspy.read(filename)
         except FileNotFoundError:
             print(filename, "not found.")
             if return_num_points:
