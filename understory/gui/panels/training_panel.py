@@ -77,6 +77,22 @@ class TrainingPanel(QWidget):
         self._worker: Optional[TrainingWorker] = None
         self._setup_ui()
 
+    @staticmethod
+    def _add_help_button(group_box: QGroupBox, help_text: str) -> None:
+        """Insert a small '?' button into a group box title area."""
+        btn = QPushButton("?")
+        btn.setFixedSize(20, 20)
+        btn.setToolTip(help_text)
+        btn.setStyleSheet(
+            "QPushButton { font-weight: bold; font-size: 11px; padding: 0; "
+            "border-radius: 10px; min-height: 0; min-width: 0; }"
+        )
+        btn.clicked.connect(lambda: QMessageBox.information(btn.window(), "Help", help_text))
+        # Insert at the top of the group box layout
+        existing_layout = group_box.layout()
+        if existing_layout and existing_layout.count() > 0:
+            existing_layout.insertWidget(0, btn)
+
     def _setup_ui(self) -> None:
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -92,6 +108,28 @@ class TrainingPanel(QWidget):
         title = QLabel("Training Workflow")
         title.setObjectName("sectionHeader")
         layout.addWidget(title)
+
+        # Quick Start Guide — collapsible
+        guide = QGroupBox("Quick Start Guide")
+        guide.setCheckable(True)
+        guide.setChecked(False)
+        guide_layout = QVBoxLayout(guide)
+        guide_text = QLabel(
+            "<b>1.</b> Import labeled point clouds (.las) with labels 1-4.<br>"
+            "<b>2.</b> Optionally bootstrap labels using an existing model — run "
+            "the pipeline, then correct the output in the Label Editor.<br>"
+            "<b>3.</b> Open the Label Editor to review and correct labels. "
+            "Use keys 1-4 to quickly assign classes to selected points.<br>"
+            "<b>4.</b> Configure training parameters. Start with defaults for "
+            "fine-tuning an existing model, or increase epochs for training "
+            "from scratch.<br>"
+            "<b>5.</b> Click 'Start Training' and monitor the loss chart. "
+            "Lower loss = better model. The model is saved after every epoch."
+        )
+        guide_text.setWordWrap(True)
+        guide_text.setTextFormat(Qt.RichText)
+        guide_layout.addWidget(guide_text)
+        layout.addWidget(guide)
 
         # Step 1: Data import
         step1 = QGroupBox("Step 1: Import Training Data")
@@ -113,6 +151,12 @@ class TrainingPanel(QWidget):
         import_row.addWidget(import_btn)
         s1_layout.addLayout(import_row)
 
+        self._add_help_button(step1,
+            "Import labeled .las files into the data/train/ directory.\n"
+            "Each file should have a 'label' column with values:\n"
+            "  1 = Terrain, 2 = Vegetation, 3 = CWD, 4 = Stem\n\n"
+            "You can also place files directly in the data/train/ folder."
+        )
         layout.addWidget(step1)
 
         # Step 2: Bootstrap labels
@@ -126,6 +170,12 @@ class TrainingPanel(QWidget):
         bootstrap_btn = QPushButton("Bootstrap Labels...")
         bootstrap_btn.clicked.connect(self._bootstrap_labels)
         s2_layout.addWidget(bootstrap_btn)
+        self._add_help_button(step2,
+            "If you don't have labeled data yet, use an existing model\n"
+            "to auto-generate initial labels. Run the pipeline on your\n"
+            "point cloud, then open the segmented output in the Label\n"
+            "Editor (Step 3) to correct any mistakes."
+        )
         layout.addWidget(step2)
 
         # Step 3: Label correction
@@ -139,6 +189,16 @@ class TrainingPanel(QWidget):
         edit_btn = QPushButton("Open Label Editor...")
         edit_btn.clicked.connect(self._open_label_editor)
         s3_layout.addWidget(edit_btn)
+        self._add_help_button(step3,
+            "The Label Editor lets you visually correct point labels.\n\n"
+            "Key shortcuts:\n"
+            "  R = Toggle box selection\n"
+            "  B = Toggle brush selection\n"
+            "  1-4 = Paint selection with that class\n"
+            "  C = Toggle confidence heatmap\n"
+            "  Ctrl+Z = Undo, Ctrl+Y = Redo\n\n"
+            "Focus on low-confidence points first (red in confidence view)."
+        )
         layout.addWidget(step3)
 
         # Step 4: Training configuration
