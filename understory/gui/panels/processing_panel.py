@@ -285,6 +285,11 @@ class ProcessingPanel(QWidget):
         self._console.setPlaceholderText("Console output...")
         bottom_layout.addWidget(self._console)
 
+        self._save_log_btn = QPushButton("Save Log")
+        self._save_log_btn.setToolTip("Save console output to a text file")
+        self._save_log_btn.clicked.connect(self._save_console_log)
+        bottom_layout.addWidget(self._save_log_btn)
+
         outer_layout.addWidget(bottom)
 
     def _register_defaults(self) -> None:
@@ -1605,6 +1610,22 @@ class ProcessingPanel(QWidget):
 
     def _log(self, msg: str) -> None:
         self._console.append(msg)
+
+    def _save_console_log(self) -> None:
+        """Save the console output to a text file."""
+        text = self._console.toPlainText()
+        if not text.strip():
+            QMessageBox.information(self, "Empty Log", "No console output to save.")
+            return
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, "Save Console Log", "", "Text Files (*.txt);;All Files (*)",
+        )
+        if filepath:
+            if not filepath.endswith(".txt"):
+                filepath += ".txt"
+            with open(filepath, "w") as f:
+                f.write(text)
+            self._log(f"Log saved to: {filepath}")
 
     # --- Project save/load ---
 
