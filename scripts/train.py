@@ -310,7 +310,7 @@ class TrainModel:
             running_loss = 0.0
             running_acc = 0
             i = 0
-            running_point_cloud_vis = np.zeros((0, 5))
+            vis_parts = []
             for data in self.train_loader:
                 data.pos = data.pos.to(self.device)
                 data.y = torch.unsqueeze(data.y, 0).to(self.device)
@@ -324,11 +324,8 @@ class TrainModel:
                 _, preds = torch.max(outputs, 1)
                 running_loss += loss.detach().item()
                 running_acc += torch.sum(preds == data.y.data).item() / data.y.shape[1]
-                running_point_cloud_vis = np.vstack(
-                    (
-                        running_point_cloud_vis,
-                        np.hstack((data.pos.cpu() + np.array([i * 7, 0, 0]), data.y.cpu().T, preds.cpu().T)),
-                    )
+                vis_parts.append(
+                    np.hstack((data.pos.cpu() + np.array([i * 7, 0, 0]), data.y.cpu().T, preds.cpu().T))
                 )
                 if i % 20 == 0:
                     print(
@@ -339,6 +336,7 @@ class TrainModel:
                     )
 
                     if self.parameters["generate_point_cloud_vis"]:
+                        running_point_cloud_vis = np.vstack(vis_parts)
                         save_file(
                             os.path.join(get_fsct_path("data"), "latest_prediction.las"),
                             running_point_cloud_vis,

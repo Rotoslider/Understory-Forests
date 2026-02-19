@@ -937,7 +937,12 @@ class MeasureTree:
         )
 
         print("Correcting Cylinder assignments...")
-        sorted_full_cyl_array = np.zeros((0, full_cyl_array.shape[1]))
+        # Pre-allocate output buffer to avoid O(n^2) vstack
+        n_cols = full_cyl_array.shape[1]
+        max_output_rows = full_cyl_array.shape[0] * 2
+        sorted_buf = np.empty((max_output_rows, n_cols))
+        write_idx = 0
+
         t_id = 1
         max_search_radius = self.parameters["max_search_radius"]
         min_points = 5
@@ -947,16 +952,18 @@ class MeasureTree:
             if int(tree_id) % 10 == 0:
                 print("Tree ID", int(tree_id), "/", int(max_tree_id))
             tree = full_cyl_array[full_cyl_array[:, self.cyl_dict["tree_id"]] == int(tree_id)]
-            tree_kdtree = spatial.cKDTree(sorted_full_cyl_array[:, :3], leafsize=1000)
+            tree_kdtree = spatial.cKDTree(sorted_buf[:write_idx, :3], leafsize=1000) if write_idx > 0 else None
             if tree.shape[0] >= min_points:
                 lowest_point = tree[np.argmin(tree[:, 2])]
                 highest_point = tree[np.argmax(tree[:, 2])]
-                lowneighbours = sorted_full_cyl_array[
-                    tree_kdtree.query_ball_point(lowest_point[:3], r=max_search_radius)
-                ]
-                highneighbours = sorted_full_cyl_array[
-                    tree_kdtree.query_ball_point(highest_point[:3], r=max_search_radius)
-                ]
+
+                lowneighbours = np.empty((0, n_cols))
+                highneighbours = np.empty((0, n_cols))
+                if tree_kdtree is not None:
+                    low_idx = tree_kdtree.query_ball_point(lowest_point[:3], r=max_search_radius)
+                    lowneighbours = sorted_buf[low_idx] if low_idx else np.empty((0, n_cols))
+                    high_idx = tree_kdtree.query_ball_point(highest_point[:3], r=max_search_radius)
+                    highneighbours = sorted_buf[high_idx] if high_idx else np.empty((0, n_cols))
 
                 lowest_point_z = lowest_point[2] - griddata(
                     (self.DTM[:, 0], self.DTM[:, 1]),
@@ -979,7 +986,12 @@ class MeasureTree:
                             )
                         )
                         tree[:, self.cyl_dict["tree_id"]] = best_parent_point[self.cyl_dict["tree_id"]]
-                        sorted_full_cyl_array = np.vstack((sorted_full_cyl_array, tree))
+                        # Grow buffer if needed
+                        needed = write_idx + tree.shape[0]
+                        if needed > sorted_buf.shape[0]:
+                            sorted_buf = np.vstack((sorted_buf[:write_idx], np.empty((max(needed * 2, sorted_buf.shape[0] * 2) - write_idx, n_cols))))
+                        sorted_buf[write_idx:write_idx + tree.shape[0]] = tree
+                        write_idx += tree.shape[0]
                         assigned = True
                     else:
                         assigned = False
@@ -997,15 +1009,25 @@ class MeasureTree:
                             )
                         )
                         tree[:, self.cyl_dict["tree_id"]] = best_parent_point[self.cyl_dict["tree_id"]]
-                        sorted_full_cyl_array = np.vstack((sorted_full_cyl_array, tree))
+                        needed = write_idx + tree.shape[0]
+                        if needed > sorted_buf.shape[0]:
+                            sorted_buf = np.vstack((sorted_buf[:write_idx], np.empty((max(needed * 2, sorted_buf.shape[0] * 2) - write_idx, n_cols))))
+                        sorted_buf[write_idx:write_idx + tree.shape[0]] = tree
+                        write_idx += tree.shape[0]
                         assigned = True
                     else:
                         assigned = False
 
                 if assigned is False and lowest_point_z < self.parameters["tree_base_cutoff_height"]:
                     tree[:, self.cyl_dict["tree_id"]] = t_id
-                    sorted_full_cyl_array = np.vstack((sorted_full_cyl_array, tree))
+                    needed = write_idx + tree.shape[0]
+                    if needed > sorted_buf.shape[0]:
+                        sorted_buf = np.vstack((sorted_buf[:write_idx], np.empty((max(needed * 2, sorted_buf.shape[0] * 2) - write_idx, n_cols))))
+                    sorted_buf[write_idx:write_idx + tree.shape[0]] = tree
+                    write_idx += tree.shape[0]
                     t_id += 1
+
+        sorted_full_cyl_array = sorted_buf[:write_idx]
 
         save_file(
             self.output_dir + "sorted_full_cyl_array.las",
