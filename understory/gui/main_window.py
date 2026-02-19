@@ -363,6 +363,12 @@ class MainWindow(QMainWindow):
         # Spacer
         status_bar.addWidget(QLabel("  |  "))
 
+        # Point count
+        self._point_count_status = QLabel("")
+        status_bar.addWidget(self._point_count_status)
+
+        status_bar.addWidget(QLabel("  |  "))
+
         # Progress bar
         self._progress_bar = QProgressBar()
         self._progress_bar.setMaximumWidth(200)
@@ -479,6 +485,7 @@ class MainWindow(QMainWindow):
     def _close_point_cloud(self) -> None:
         self._viewer.clear()
         self._status_label.setText("Ready")
+        self._update_point_count()
 
     def _reset_camera(self) -> None:
         self._viewer._reset_view()
@@ -515,6 +522,19 @@ class MainWindow(QMainWindow):
             self.setWindowTitle(f"Understory — {name}")
         else:
             self.setWindowTitle("Understory")
+
+    def _update_point_count(self) -> None:
+        """Update the status bar point count label."""
+        viewer = self._viewer
+        if viewer._points_full is None:
+            self._point_count_status.setText("")
+            return
+        total = viewer._points_full.shape[0]
+        displayed = len(viewer._lod_indices) if viewer._lod_indices is not None else total
+        if displayed < total:
+            self._point_count_status.setText(f"{displayed:,} / {total:,} points")
+        else:
+            self._point_count_status.setText(f"{total:,} points")
 
     # --- Slots ---
 
@@ -554,6 +574,7 @@ class MainWindow(QMainWindow):
             self._viewer.load_points(points, colors=colors)
             self._add_recent_project(filepath)
             self._status_label.setText(f"Loaded: {os.path.basename(filepath)} ({points.shape[0]:,} points)")
+            self._update_point_count()
 
         except Exception as e:
             self._status_label.setText(f"Error loading file: {e}")
@@ -650,6 +671,7 @@ class MainWindow(QMainWindow):
         self._status_label.setText(
             f"Subsampled: {n_before:,} -> {n_after:,} points ({n_after/n_before*100:.1f}%)"
         )
+        self._update_point_count()
 
     @Slot(bool)
     def _on_crop_state_changed(self, cropped: bool) -> None:
@@ -783,6 +805,7 @@ class MainWindow(QMainWindow):
             self._status_label.setText(
                 f"Loaded {n_files} layer(s): {points.shape[0]:,} points"
             )
+            self._update_point_count()
         except Exception as e:
             self._status_label.setText(f"Error loading layers: {e}")
 
