@@ -129,7 +129,11 @@ class MainWindow(QMainWindow):
         self._restore_settings()
 
     def _load_stylesheet(self) -> None:
-        qss_path = Path(__file__).parent.parent / "resources" / "styles" / "understory.qss"
+        dark = self._settings.value("theme/dark", False, type=bool)
+        if dark:
+            qss_path = Path(__file__).parent.parent / "resources" / "styles" / "understory_dark.qss"
+        else:
+            qss_path = Path(__file__).parent.parent / "resources" / "styles" / "understory.qss"
         if qss_path.exists():
             self.setStyleSheet(qss_path.read_text())
 
@@ -275,6 +279,14 @@ class MainWindow(QMainWindow):
         if saved_units == "Imperial":
             imperial_action.setChecked(True)
         self._units_actions = {"Metric": metric_action, "Imperial": imperial_action}
+
+        view_menu.addSeparator()
+
+        self._dark_mode_action = QAction("Dark Mode", self)
+        self._dark_mode_action.setCheckable(True)
+        self._dark_mode_action.setChecked(self._settings.value("theme/dark", False, type=bool))
+        self._dark_mode_action.triggered.connect(self._toggle_theme)
+        view_menu.addAction(self._dark_mode_action)
 
         # Tools menu
         tools_menu = menubar.addMenu("Tools")
@@ -1090,6 +1102,15 @@ class MainWindow(QMainWindow):
             dlg.exec()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not open allometry panel: {e}")
+
+    def _toggle_theme(self, dark: bool) -> None:
+        """Toggle between light and dark themes."""
+        self._settings.setValue("theme/dark", dark)
+        self._load_stylesheet()
+        # Update PyVista viewer background
+        bg = "#0d1b16" if dark else "#1a2e26"
+        self._viewer._plotter.set_background(bg)
+        self._viewer._plotter.render()
 
     def _set_units(self, system_name: str) -> None:
         """Set the measurement unit system."""
