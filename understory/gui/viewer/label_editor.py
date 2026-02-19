@@ -71,8 +71,10 @@ class LabelEditor(QWidget):
         self._redo_stack: list[UndoEntry] = []
         self._brush_radius: float = 0.5
         self._picking_active: bool = False
+        self._brush_mode: bool = False
         self._focus_mode: bool = False
         self._show_confidence: bool = False
+        self._kdtree = None
 
         self._setup_ui()
         self._setup_shortcuts()
@@ -161,6 +163,13 @@ class LabelEditor(QWidget):
         self._select_btn.setChecked(False)
         self._select_btn.toggled.connect(self._toggle_picking)
         tool_layout.addWidget(self._select_btn)
+
+        self._brush_btn = QPushButton("Enable Brush (B)")
+        self._brush_btn.setToolTip("Click on points to select nearby points within the brush radius")
+        self._brush_btn.setCheckable(True)
+        self._brush_btn.setChecked(False)
+        self._brush_btn.toggled.connect(self._toggle_brush)
+        tool_layout.addWidget(self._brush_btn)
 
         brush_row = QHBoxLayout()
         brush_row.addWidget(QLabel("Radius:"))
@@ -285,9 +294,11 @@ class LabelEditor(QWidget):
         """Toggle between navigation and box-select modes."""
         self._picking_active = enabled
         if enabled:
-            # Deactivate focus mode — only one picking mode at a time
+            # Deactivate focus and brush modes — only one picking mode at a time
             if self._focus_mode:
                 self._focus_btn.setChecked(False)
+            if self._brush_mode:
+                self._brush_btn.setChecked(False)
             self._select_btn.setText("Disable Box Select (R)")
             with warnings.catch_warnings():
                 warnings.filterwarnings(
@@ -302,15 +313,60 @@ class LabelEditor(QWidget):
             # Restore standard 3D navigation (trackball rotate/pan/zoom)
             self._plotter.enable_trackball_style()
 
+    def _toggle_brush(self, enabled: bool) -> None:
+        """Toggle brush selection mode."""
+        self._brush_mode = enabled
+        if enabled:
+            # Deactivate box select and focus mode
+            if self._picking_active:
+                self._select_btn.setChecked(False)
+            if self._focus_mode:
+                self._focus_btn.setChecked(False)
+            self._brush_btn.setText("Disable Brush (B)")
+            # Build KDTree if needed
+            if self._points is not None and self._kdtree is None:
+                from scipy.spatial import cKDTree
+                self._kdtree = cKDTree(self._points)
+            self._plotter.enable_surface_point_picking(
+                callback=self._on_brush_pick,
+                show_message=False,
+                show_point=True,
+                color="cyan",
+                point_size=10,
+                picker="cell",
+            )
+        else:
+            self._brush_btn.setText("Enable Brush (B)")
+            self._plotter.disable_picking()
+            self._plotter.enable_trackball_style()
+
+    def _on_brush_pick(self, point: np.ndarray, *_args) -> None:
+        """Handle a brush pick — select all points within brush radius."""
+        if point is None or len(point) < 3 or self._kdtree is None:
+            return
+        indices = self._kdtree.query_ball_point(point[:3], r=self._brush_radius)
+        if not indices:
+            return
+        new_indices = np.array(indices, dtype=int)
+        # Merge with existing selection (additive)
+        if self._selected_indices is not None:
+            new_indices = np.unique(np.concatenate([self._selected_indices, new_indices]))
+        self._selected_indices = new_indices
+        self._paint_btn.setEnabled(True)
+        self._clear_sel_btn.setEnabled(True)
+        self._render()
+
     # --- Focus point ---
 
     def _on_focus_toggled(self, checked: bool) -> None:
         """Toggle focus-picking mode (click to set camera orbit centre)."""
         self._focus_mode = checked
         if checked:
-            # Deactivate box select — only one picking mode at a time
+            # Deactivate box select and brush — only one picking mode at a time
             if self._picking_active:
                 self._select_btn.setChecked(False)
+            if self._brush_mode:
+                self._brush_btn.setChecked(False)
             self._plotter.enable_surface_point_picking(
                 callback=self._on_point_picked_for_focus,
                 show_message=False,
@@ -397,6 +453,9 @@ class LabelEditor(QWidget):
         QShortcut(QKeySequence("R"), self).activated.connect(
             lambda: self._select_btn.setChecked(not self._select_btn.isChecked())
         )
+        QShortcut(QKeySequence("B"), self).activated.connect(
+            lambda: self._brush_btn.setChecked(not self._brush_btn.isChecked())
+        )
         QShortcut(QKeySequence("F"), self).activated.connect(
             lambda: self._focus_btn.setChecked(not self._focus_btn.isChecked())
         )
@@ -457,6 +516,9 @@ class LabelEditor(QWidget):
         self._selected_indices = None
         self._undo_stack.clear()
         self._redo_stack.clear()
+        # Build KDTree for brush selection
+        from scipy.spatial import cKDTree
+        self._kdtree = cKDTree(self._points)
 
         self._render(reset_camera=True)
         self._update_stats()
