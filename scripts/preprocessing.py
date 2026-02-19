@@ -138,9 +138,7 @@ class Preprocessing:
 
         box_centres = np.vstack(np.meshgrid(x_vals, y_vals, z_vals)).reshape(3, -1).T
 
-        point_divisions = []
-        for thread in range(self.num_cpu_cores):
-            point_divisions.append([])
+        point_divisions = [[] for _ in range(self.num_cpu_cores)]
 
         points_to_assign = box_centres
 
@@ -150,33 +148,24 @@ class Preprocessing:
                 points_to_assign = points_to_assign[1:]
                 if points_to_assign.shape[0] == 0:
                     break
-        threads = []
-        prev_id_offset = 0
-        for thread in range(self.num_cpu_cores):
-            id_offset = 0
-            for t in range(thread):
-                id_offset = id_offset + len(point_divisions[t])
-            # print('Thread:', thread, prev_id_offset, id_offset)
-            prev_id_offset = id_offset
-            t = threading.Thread(
-                target=Preprocessing.threaded_boxes,
-                args=(
-                    self.point_cloud,
-                    self.box_dimensions,
-                    self.min_points_per_box,
-                    self.max_points_per_box,
-                    self.working_dir,
-                    id_offset,
-                    point_divisions[thread],
-                ),
-            )
-            threads.append(t)
 
-        for x in threads:
-            x.start()
+        # Compute per-worker id_offsets
+        id_offsets = []
+        cum = 0
+        for div in point_divisions:
+            id_offsets.append(cum)
+            cum += len(div)
 
-        for x in threads:
-            x.join()
+        # Use multiprocessing instead of threading for true parallelism
+        worker_args = [
+            (self.point_cloud, self.box_dimensions, self.min_points_per_box,
+             self.max_points_per_box, self.working_dir, offset, div)
+            for offset, div in zip(id_offsets, point_divisions)
+            if len(div) > 0
+        ]
+
+        with get_context("spawn").Pool(processes=self.num_cpu_cores) as pool:
+            pool.starmap(Preprocessing.threaded_boxes, worker_args)
 
         # Verify that at least some boxes were created
         npy_files = glob.glob(self.working_dir + "*.npy")
