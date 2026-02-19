@@ -1251,10 +1251,10 @@ class ProcessingPanel(QWidget):
             self,
             "Save Prepared Point Cloud",
             default_dir,
-            "LAS Files (*.las);;All Files (*)",
+            "LAS Files (*.las);;LAZ Compressed (*.laz);;All Files (*)",
         )
         if filepath:
-            if not filepath.endswith(".las"):
+            if not filepath.endswith((".las", ".laz")):
                 filepath += ".las"
             self._prepared_cloud_path = filepath
             self.save_cloud_requested.emit(filepath)

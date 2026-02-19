@@ -200,7 +200,8 @@ def save_file(filename, pointcloud, headers_of_interest=None, silent=False):
     else:
         if not silent:
             print("Saving file:", filename)
-        if os.path.splitext(filename)[1].lower() == ".las":
+        ext = os.path.splitext(filename)[1].lower()
+        if ext in (".las", ".laz"):
             las = laspy.create(file_version="1.4", point_format=7)
             las.header.offsets = np.min(pointcloud[:, :3], axis=0)
             las.header.scales = [0.001, 0.001, 0.001]
@@ -224,7 +225,10 @@ def save_file(filename, pointcloud, headers_of_interest=None, silent=False):
                     else:
                         las.add_extra_dim(laspy.ExtraBytesParams(name=header, type="f8"))
                         setattr(las, header, column)
-            las.write(filename)
+            if ext == ".laz":
+                las.write(filename, laz_backend=laspy.LazBackend.LazrsParallel)
+            else:
+                las.write(filename)
             if not silent:
                 print("Saved.")
 

@@ -682,10 +682,11 @@ class LabelEditor(QWidget):
             return
         from PySide6.QtWidgets import QFileDialog
         filepath, _ = QFileDialog.getSaveFileName(
-            self, "Save Labeled Point Cloud", "", "LAS Files (*.las);;All Files (*)"
+            self, "Save Labeled Point Cloud", "",
+            "LAS Files (*.las);;LAZ Compressed (*.laz);;All Files (*)",
         )
         if filepath:
-            if not filepath.endswith(".las"):
+            if not filepath.endswith((".las", ".laz")):
                 filepath += ".las"
             self.export_labeled_las(filepath)
 
