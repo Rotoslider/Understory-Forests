@@ -27,7 +27,7 @@ from typing import Optional
 import numpy as np
 
 from PySide6.QtCore import Qt, QThread, Signal, Slot, QSize, QTimer, QProcess, QObject, QSettings
-from PySide6.QtGui import QAction, QIcon, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -248,6 +248,34 @@ class MainWindow(QMainWindow):
         flythrough_action.triggered.connect(self._open_flythrough)
         view_menu.addAction(flythrough_action)
 
+        view_menu.addSeparator()
+
+        # Units submenu
+        units_menu = QMenu("Units", self)
+        units_group = QActionGroup(self)
+        units_group.setExclusive(True)
+
+        metric_action = QAction("Metric (m)", self)
+        metric_action.setCheckable(True)
+        metric_action.setChecked(True)
+        metric_action.triggered.connect(lambda: self._set_units("Metric"))
+        units_group.addAction(metric_action)
+        units_menu.addAction(metric_action)
+
+        imperial_action = QAction("Imperial (ft)", self)
+        imperial_action.setCheckable(True)
+        imperial_action.triggered.connect(lambda: self._set_units("Imperial"))
+        units_group.addAction(imperial_action)
+        units_menu.addAction(imperial_action)
+
+        view_menu.addMenu(units_menu)
+
+        # Restore saved unit preference
+        saved_units = self._settings.value("viewer/units", "Metric")
+        if saved_units == "Imperial":
+            imperial_action.setChecked(True)
+        self._units_actions = {"Metric": metric_action, "Imperial": imperial_action}
+
         # Tools menu
         tools_menu = menubar.addMenu("Tools")
 
@@ -415,6 +443,11 @@ class MainWindow(QMainWindow):
                 if self._viewer._color_combo.itemData(i).value == saved_color:
                     self._viewer._color_combo.setCurrentIndex(i)
                     break
+        # Restore unit system
+        saved_units = self._settings.value("viewer/units", "Metric")
+        if saved_units == "Imperial":
+            from understory.gui.viewer.point_cloud_viewer import UnitSystem
+            self._viewer.set_unit_system(UnitSystem.IMPERIAL)
 
     def closeEvent(self, event) -> None:
         """Save settings on close."""
@@ -1057,6 +1090,14 @@ class MainWindow(QMainWindow):
             dlg.exec()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not open allometry panel: {e}")
+
+    def _set_units(self, system_name: str) -> None:
+        """Set the measurement unit system."""
+        from understory.gui.viewer.point_cloud_viewer import UnitSystem
+        system = UnitSystem(system_name)
+        self._viewer.set_unit_system(system)
+        self._settings.setValue("viewer/units", system_name)
+        self._status_label.setText(f"Units: {system_name}")
 
     def _start_measure(self, mode: str) -> None:
         if hasattr(self._viewer, 'start_measurement'):

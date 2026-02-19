@@ -29,6 +29,14 @@ class ColorMode(Enum):
     COMPARISON = "Comparison"
 
 
+class UnitSystem(Enum):
+    METRIC = "Metric"
+    IMPERIAL = "Imperial"
+
+
+METERS_TO_FEET = 3.28084
+
+
 class MeasureMode(Enum):
     OFF = "off"
     DISTANCE = "distance"
@@ -107,6 +115,9 @@ class PointCloudViewer(QWidget):
 
         # Comparison state
         self._comparison_distances: Optional[np.ndarray] = None
+
+        # Unit system
+        self._unit_system: UnitSystem = UnitSystem.METRIC
 
         self._setup_ui()
 
@@ -827,6 +838,19 @@ class PointCloudViewer(QWidget):
         elif view == "iso":
             self._plotter.view_isometric()
 
+    # --- Unit system ---
+
+    @property
+    def unit_factor(self) -> float:
+        return METERS_TO_FEET if self._unit_system == UnitSystem.IMPERIAL else 1.0
+
+    @property
+    def unit_suffix(self) -> str:
+        return "ft" if self._unit_system == UnitSystem.IMPERIAL else "m"
+
+    def set_unit_system(self, system: UnitSystem) -> None:
+        self._unit_system = system
+
     # --- Measurement tools ---
 
     def start_measurement(self, mode: str) -> None:
@@ -888,11 +912,11 @@ class PointCloudViewer(QWidget):
         b = pt
 
         if self._measure_mode == MeasureMode.DISTANCE:
-            value = float(np.linalg.norm(b - a))
-            label = f"{value:.2f} m"
+            value = float(np.linalg.norm(b - a)) * self.unit_factor
+            label = f"{value:.2f} {self.unit_suffix}"
         elif self._measure_mode == MeasureMode.HEIGHT:
-            value = abs(float(b[2] - a[2]))
-            label = f"dZ = {value:.2f} m"
+            value = abs(float(b[2] - a[2])) * self.unit_factor
+            label = f"dZ = {value:.2f} {self.unit_suffix}"
         else:
             label = ""
 
