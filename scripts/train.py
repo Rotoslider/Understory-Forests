@@ -15,8 +15,9 @@ import shutil
 
 
 class TrainModel:
-    def __init__(self, parameters):
+    def __init__(self, parameters, progress_callback=None):
         self.parameters = parameters
+        self._progress_callback = progress_callback
 
         if self.parameters["num_cpu_cores_preprocessing"] == 0:
             print("Using default number of CPU cores (all of them).")
@@ -347,6 +348,8 @@ class TrainModel:
             epoch_acc = running_acc / len(self.train_loader)
             self.update_log(epoch, epoch_loss, epoch_acc, val_epoch_loss, val_epoch_acc)
             print("Train epoch accuracy: ", np.around(epoch_acc, 4), ", Loss: ", np.around(epoch_loss, 4), "\n")
+            if self._progress_callback is not None:
+                self._progress_callback(epoch, epoch_loss, epoch_acc, val_epoch_loss, val_epoch_acc)
 
             # VALIDATION
             print("Validation")
@@ -382,6 +385,8 @@ class TrainModel:
                     "Validation epoch accuracy: ", np.around(val_epoch_acc, 4), ", Loss: ", np.around(val_epoch_loss, 4)
                 )
                 print("=====================================================================")
+                if self._progress_callback is not None:
+                    self._progress_callback(epoch, epoch_loss, epoch_acc, val_epoch_loss, val_epoch_acc)
             torch.save(
                 model.state_dict(),
                 os.path.join(get_fsct_path("model"), self.parameters["model_filename"]),

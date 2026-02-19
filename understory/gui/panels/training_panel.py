@@ -44,13 +44,16 @@ from understory.gui.tooltips import get_tooltip
 class TrainingWorker(QThread):
     """Runs model training in a background thread."""
 
-    progress = Signal(int, float, float)  # epoch, loss, accuracy
+    progress = Signal(int, float, float, float, float)  # epoch, train_loss, train_acc, val_loss, val_acc
     finished = Signal(str)  # model path
     error = Signal(str)
 
     def __init__(self, parameters: dict, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self._params = parameters
+
+    def _on_epoch(self, epoch, train_loss, train_acc, val_loss, val_acc):
+        self.progress.emit(epoch, train_loss, train_acc, val_loss, val_acc)
 
     def run(self) -> None:
         try:
@@ -59,7 +62,7 @@ class TrainingWorker(QThread):
                 sys.path.insert(0, scripts_dir)
 
             from train import TrainModel
-            trainer = TrainModel(self._params)
+            trainer = TrainModel(self._params, progress_callback=self._on_epoch)
             trainer.run_training()
 
             from tools import get_fsct_path
@@ -67,6 +70,72 @@ class TrainingWorker(QThread):
             self.finished.emit(model_path)
         except Exception as e:
             self.error.emit(str(e))
+
+
+class TrainingChartCanvas:
+    """Lazy-loaded matplotlib chart for training loss/accuracy curves."""
+
+    def __init__(self, parent=None):
+        self._widget = None
+        self._parent = parent
+        self._epochs = []
+        self._train_loss = []
+        self._val_loss = []
+
+    def _ensure_widget(self):
+        if self._widget is not None:
+            return
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        from matplotlib.figure import Figure
+
+        fig = Figure(figsize=(5, 3), dpi=100)
+        fig.set_facecolor("#1a2e26")
+        self._ax = fig.add_subplot(1, 1, 1)
+        self._style_axis()
+        fig.tight_layout(pad=1.5)
+        self._widget = FigureCanvasQTAgg(fig)
+        self._widget.setParent(self._parent)
+        self._widget.setMinimumHeight(200)
+
+    def _style_axis(self):
+        ax = self._ax
+        ax.set_facecolor("#0d1b16")
+        ax.set_title("Training Loss", fontsize=11, fontweight="bold", color="#a8d8c0")
+        ax.set_xlabel("Epoch", fontsize=9, color="#a8d8c0")
+        ax.set_ylabel("Loss", fontsize=9, color="#a8d8c0")
+        ax.tick_params(colors="#a8d8c0", labelsize=8)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_color("#2d7a5e")
+        ax.spines["bottom"].set_color("#2d7a5e")
+        ax.grid(True, alpha=0.3, color="#2d7a5e")
+
+    def widget(self):
+        self._ensure_widget()
+        return self._widget
+
+    def add_epoch(self, epoch, train_loss, val_loss):
+        self._ensure_widget()
+        self._epochs.append(epoch)
+        self._train_loss.append(train_loss)
+        self._val_loss.append(val_loss)
+
+        self._ax.clear()
+        self._style_axis()
+        self._ax.plot(self._epochs, self._train_loss, color="#4a9e7e", linewidth=1.5, label="Train")
+        if any(v > 0 for v in self._val_loss):
+            self._ax.plot(self._epochs, self._val_loss, color="#e8a838", linewidth=1.5, label="Validation")
+        self._ax.legend(fontsize=8, facecolor="#1a2e26", edgecolor="#2d7a5e", labelcolor="#a8d8c0")
+        self._widget.draw_idle()
+
+    def reset(self):
+        self._epochs.clear()
+        self._train_loss.clear()
+        self._val_loss.clear()
+        if self._widget is not None:
+            self._ax.clear()
+            self._style_axis()
+            self._widget.draw_idle()
 
 
 class TrainingPanel(QWidget):
@@ -257,6 +326,9 @@ class TrainingPanel(QWidget):
         step5 = QGroupBox("Step 5: Train Model")
         s5_layout = QVBoxLayout(step5)
 
+        self._chart = TrainingChartCanvas(parent=None)
+        s5_layout.addWidget(self._chart.widget())
+
         self._train_progress = QProgressBar()
         self._train_progress.setVisible(False)
         s5_layout.addWidget(self._train_progress)
@@ -382,6 +454,7 @@ class TrainingPanel(QWidget):
         self._train_progress.setVisible(True)
         self._train_progress.setRange(0, parameters["num_epochs"])
         self._train_status.setText("Training...")
+        self._chart.reset()
 
         self._worker = TrainingWorker(parameters)
         self._worker.progress.connect(self._on_train_progress)
@@ -389,10 +462,14 @@ class TrainingPanel(QWidget):
         self._worker.error.connect(self._on_train_error)
         self._worker.start()
 
-    @Slot(int, float, float)
-    def _on_train_progress(self, epoch: int, loss: float, acc: float) -> None:
+    @Slot(int, float, float, float, float)
+    def _on_train_progress(self, epoch: int, loss: float, acc: float, val_loss: float = 0, val_acc: float = 0) -> None:
         self._train_progress.setValue(epoch)
-        self._train_status.setText(f"Epoch {epoch} — Loss: {loss:.4f}, Acc: {acc:.4f}")
+        status = f"Epoch {epoch} — Loss: {loss:.4f}, Acc: {acc:.4f}"
+        if val_loss > 0:
+            status += f" | Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}"
+        self._train_status.setText(status)
+        self._chart.add_epoch(epoch, loss, val_loss)
 
     @Slot(str)
     def _on_train_finished(self, model_path: str) -> None:
