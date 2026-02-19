@@ -113,6 +113,7 @@ class MainWindow(QMainWindow):
 
         self._current_project_path: Optional[str] = None
         self._settings = QSettings("Understory", "Understory")
+        self._last_directory: str = self._settings.value("last_directory", "")
 
         self._load_stylesheet()
         self._setup_icon()
@@ -124,6 +125,8 @@ class MainWindow(QMainWindow):
         self._gpu_monitor = GpuMonitor(parent=self)
         self._gpu_monitor.updated.connect(self._gpu_label.setText)
         self.setAcceptDrops(True)
+
+        self._restore_settings()
 
     def _load_stylesheet(self) -> None:
         qss_path = Path(__file__).parent.parent / "resources" / "styles" / "understory.qss"
@@ -317,7 +320,8 @@ class MainWindow(QMainWindow):
         layout = QHBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        splitter = QSplitter(Qt.Horizontal)
+        self._splitter = QSplitter(Qt.Horizontal)
+        splitter = self._splitter
 
         # Left panel: processing controls
         self._processing_panel = ProcessingPanel()
@@ -393,26 +397,61 @@ class MainWindow(QMainWindow):
         except ImportError:
             return "GPU: PyTorch not installed"
 
+    def _restore_settings(self) -> None:
+        """Restore window geometry, splitter state, and preferences from QSettings."""
+        geom = self._settings.value("window/geometry")
+        if geom:
+            self.restoreGeometry(geom)
+        state = self._settings.value("window/state")
+        if state:
+            self.restoreState(state)
+        splitter_state = self._settings.value("window/splitter")
+        if splitter_state:
+            self._splitter.restoreState(splitter_state)
+        # Restore color mode
+        saved_color = self._settings.value("viewer/color_mode")
+        if saved_color:
+            for i in range(self._viewer._color_combo.count()):
+                if self._viewer._color_combo.itemData(i).value == saved_color:
+                    self._viewer._color_combo.setCurrentIndex(i)
+                    break
+
+    def closeEvent(self, event) -> None:
+        """Save settings on close."""
+        self._settings.setValue("window/geometry", self.saveGeometry())
+        self._settings.setValue("window/state", self.saveState())
+        self._settings.setValue("window/splitter", self._splitter.saveState())
+        self._settings.setValue("last_directory", self._last_directory)
+        if self._viewer._color_mode:
+            self._settings.setValue("viewer/color_mode", self._viewer._color_mode.value)
+        super().closeEvent(event)
+
+    def _remember_directory(self, filepath: str) -> None:
+        """Remember the directory of the given file for future dialogs."""
+        self._last_directory = os.path.dirname(filepath)
+
     # --- Menu actions ---
 
     def _open_file(self) -> None:
         filepath, _ = QFileDialog.getOpenFileName(
             self,
             "Open Point Cloud",
-            "",
+            self._last_directory,
             "Point Clouds (*.las *.laz *.pcd);;All Files (*)",
         )
         if filepath:
+            self._remember_directory(filepath)
             self._processing_panel.set_input_file(filepath)
 
     def _open_project(self) -> None:
         filepath, _ = QFileDialog.getOpenFileName(
             self,
             "Open Project",
-            "",
+            self._last_directory,
             "Understory Projects (*.yaml *.yml);;All Files (*)",
         )
         if filepath:
+            self._remember_directory(filepath)
             self._processing_panel.load_project(filepath)
             self._current_project_path = filepath
             self._update_title()
@@ -541,6 +580,7 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def _on_file_loaded(self, filepath: str) -> None:
         """Load and display a point cloud file in the viewer."""
+        self._remember_directory(filepath)
         self._viewer.clear()
         self._status_label.setText(f"Loading: {os.path.basename(filepath)}")
         QApplication.processEvents()
@@ -864,7 +904,7 @@ class MainWindow(QMainWindow):
         filepath, _ = QFileDialog.getOpenFileName(
             self,
             "Open Point Cloud for Label Editing",
-            "",
+            self._last_directory,
             "Point Clouds (*.las *.laz *.pcd);;All Files (*)",
         )
         if not filepath:
@@ -898,7 +938,7 @@ class MainWindow(QMainWindow):
 
     def _export_screenshot(self) -> None:
         filepath, _ = QFileDialog.getSaveFileName(
-            self, "Export Screenshot", "",
+            self, "Export Screenshot", self._last_directory,
             "PNG (*.png);;JPEG (*.jpg);;TIFF (*.tiff);;All Files (*)",
         )
         if filepath:
@@ -1040,7 +1080,7 @@ class MainWindow(QMainWindow):
 
     def _compare_clouds(self) -> None:
         filepath, _ = QFileDialog.getOpenFileName(
-            self, "Open Second Point Cloud for Comparison", "",
+            self, "Open Second Point Cloud for Comparison", self._last_directory,
             "Point Clouds (*.las *.laz *.pcd);;All Files (*)",
         )
         if filepath and hasattr(self._viewer, 'compare_with_cloud'):
