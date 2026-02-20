@@ -5,6 +5,7 @@ Provides selection tools and class painting for training data preparation.
 
 from __future__ import annotations
 
+import logging
 import warnings
 from typing import Optional
 
@@ -42,6 +43,13 @@ CLASSES = {
     3: ("CWD", "#DAA520"),          # goldenrod
     4: ("Stem", "#CC3333"),         # red
 }
+
+
+class _VTKPropsFilter(logging.Filter):
+    """Filter out the non-fatal 'Too many props' VTK error from Python logging."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "Too many props" not in record.getMessage()
 
 
 class UndoEntry:
@@ -280,6 +288,14 @@ class LabelEditor(QWidget):
         self._plotter = QtInteractor(self)
         self._plotter.set_background("#1a2e26")
         self._plotter.enable_eye_dome_lighting()
+
+        # Suppress VTK hardware selector "Too many props" error — non-fatal
+        # on large point clouds, picking still works despite the warning.
+        import vtk
+        vtk.vtkObject.GlobalWarningDisplayOff()
+        # Also suppress the Python logging version of the same error
+        logging.getLogger("vtkmodules.vtkRenderingOpenGL2").setLevel(logging.CRITICAL)
+        logging.getLogger().addFilter(_VTKPropsFilter())
 
         # Use a splitter so the user can drag to resize the sidebar
         splitter = QSplitter(Qt.Horizontal)

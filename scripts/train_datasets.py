@@ -13,7 +13,6 @@ class TrainingDataset(Dataset):
         self.filenames = glob.glob(root_dir + "*.npy")
         self.max_sample_points = max_sample_points
         self.label_index = 3
-        self.device = device
         self.min_sample_points = min_sample_points
 
     def __len__(self):
@@ -31,8 +30,9 @@ class TrainingDataset(Dataset):
         x, y = augmentations(x, y, self.min_sample_points)
         if np.all(y != 0):
             y[y == 2] = 3  # if no ground is present, CWD is relabelled as stem.
-        x = torch.from_numpy(x.copy()).type(torch.float).to(self.device)
-        y = torch.from_numpy(y.copy()).type(torch.long).to(self.device)
+        # Keep on CPU — moved to GPU in training loop to avoid CUDA fork errors
+        x = torch.from_numpy(x.copy()).type(torch.float)
+        y = torch.from_numpy(y.copy()).type(torch.long)
 
         # Place sample at origin
         global_shift = torch.mean(x[:, :3], axis=0)
@@ -47,7 +47,6 @@ class ValidationDataset(Dataset):
         super().__init__()
         self.filenames = glob.glob(root_dir + "*.npy")
         self.label_index = 3
-        self.device = device
 
     def __len__(self):
         return len(self.filenames)
@@ -57,8 +56,9 @@ class ValidationDataset(Dataset):
             point_cloud = np.load(self.filenames[index])
             x = point_cloud[:, :3]
             y = point_cloud[:, self.label_index] - 1
-            x = torch.from_numpy(x.copy()).type(torch.float).to(self.device)
-            y = torch.from_numpy(y.copy()).type(torch.long).to(self.device)
+            # Keep on CPU — moved to GPU in training loop to avoid CUDA fork errors
+            x = torch.from_numpy(x.copy()).type(torch.float)
+            y = torch.from_numpy(y.copy()).type(torch.long)
 
             # Place sample at origin
             global_shift = torch.mean(x[:, :3], axis=0)
