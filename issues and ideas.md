@@ -37,36 +37,7 @@ Measuring plot took 609.0820257663727 s (Change to Minutes and Seconds)
 Measuring plot done.
 Then your existing Pipeline complete! Output:
 There needs to be better use of the above information in the Console and the % done bars
-had this error when using the label editor: 026-02-19 16:24:59.302 (6889.591s) [    7F88F1E53080]vtkOpenGLHardwareSelect:247    ERR| vtkOpenGLHardwareSelector (0x7f84559bef10): Too many props. Currently only 16777214 props are supported.
-ERROR:root:Too many props. Currently only 16777214 props are supported.
-Tried running the training and have an error name'parameter' is not defined
 
-Why do i have more subsampled points than before:
-Subsampling...
-Original number of points: 6724794
-Slice size: 17160     Slice number: 1 / 22
-Slice size: 46102     Slice number: 2 / 22
-Slice size: 167427     Slice number: 3 / 22
-Slice size: 304879     Slice number: 4 / 22
-Slice size: 352555     Slice number: 5 / 22
-Slice size: 366421     Slice number: 6 / 22
-Slice size: 372815     Slice number: 7 / 22
-Slice size: 505292     Slice number: 8 / 22
-Slice size: 573524     Slice number: 9 / 22
-Slice size: 572261     Slice number: 10 / 22
-Slice size: 604944     Slice number: 11 / 22
-Slice size: 595210     Slice number: 12 / 22
-Slice size: 630288     Slice number: 13 / 22
-Slice size: 928508     Slice number: 14 / 22
-Slice size: 1323693     Slice number: 15 / 22
-Slice size: 1289959     Slice number: 16 / 22
-Slice size: 1106046     Slice number: 17 / 22
-Slice size: 1036019     Slice number: 18 / 22
-Slice size: 950636     Slice number: 19 / 22
-Slice size: 827675     Slice number: 20 / 22
-Slice size: 563463     Slice number: 21 / 22
-Slice size: 252468     Slice number: 22 / 22
-Subsampled number of points: 13197420
 Main App opens in a windowed view which is great. If I try to drag the window it changes to full screen for a second then back to original size and then I can drag without issue. Only happens first drag after launch.
 
 It would be helpful when preparing a point cloud to be able to draw a poly-line and or box around an area of cloud to remove or keep points. Typically a scan captures unwanted data at the edges that need trimmed to get the proper plot area.
