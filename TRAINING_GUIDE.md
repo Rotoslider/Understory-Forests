@@ -138,29 +138,88 @@ This saved file is your **training data** — it has the correct labels that you
 
 ---
 
-## Step 7: Import Training Data
+## Step 7: Split Your Data for Training and Validation
 
-Now bring your corrected file into the training system.
+This is an important step that many people skip — and it makes a big difference.
+
+### Why You Need Two Sets of Data
+
+When training, the model needs two separate sets of data:
+
+- **Training data** — the examples the model learns from (like a textbook)
+- **Validation data** — a separate set the model is tested on but never learns from (like an exam)
+
+If you only have training data and no validation data, you have no way to tell if the model is actually learning useful patterns or just memorizing your specific point cloud. The validation data acts as a reality check.
+
+**The training data and validation data must be different.** You cannot use the same file for both.
+
+### How to Split Your Data
+
+You have two good options:
+
+**Option A: Use Different Scans (Best)**
+
+If you have multiple scan plots from your forest:
+- Put most of them in `data/train/` (for training)
+- Put 1-2 of them in `data/validation/` (for validation)
+
+For example, if you have 5 corrected scans:
+- 4 go in `data/train/`
+- 1 goes in `data/validation/`
+
+**Option B: Split One Scan (Good Enough)**
+
+If you only have one corrected scan, open it in the Label Editor and save two copies:
+1. Load your corrected scan
+2. Use **Box Select** to select roughly 20-30% of the point cloud (for example, one side or corner)
+3. Save that selection as `my_forest_validation.las`
+4. Undo the selection, then select the remaining 70-80%
+5. Save that as `my_forest_training.las`
+
+Then:
+- Import `my_forest_training.las` into `data/train/`
+- Manually copy `my_forest_validation.las` into `data/validation/`
+
+You can find the validation folder at: `data/validation/` inside your Understory installation directory.
+
+### What Happens If You Skip Validation?
+
+Training will still run, but:
+- You will not see the orange validation line on the loss chart
+- You will have no way to detect overfitting (the model memorizing instead of learning)
+- You might train for too long and end up with a worse model
+
+**Even a small validation set is much better than none.**
+
+---
+
+## Step 8: Import Training Data
+
+Now bring your corrected files into the training system.
 
 1. Go back to the **Training** tab
 2. Under **Step 1: Import Training Data**, click **Import Files**
-3. Select your corrected .las file(s)
+3. Select your corrected .las file(s) — these go into `data/train/`
 4. The files are copied to the training data folder
+
+For validation data, manually copy your validation .las file(s) into the `data/validation/` folder inside the Understory installation directory.
+
+**Note:** The `example.las` files that come with the program are just placeholders so the folders are not empty. You can delete them once you have your own data. They will not interfere with training if left in place, but removing them avoids mixing unrelated data into your model.
 
 **More training data = better results.** If you have scans from multiple plots in the same forest type, correct and import all of them. Even 2-3 corrected scans make a big difference.
 
 ---
 
-## Step 8: Configure Training
+## Step 9: Configure Training
 
 Under **Step 4: Configure Training**, set these options:
 
 | Setting | What It Does | Suggested Value |
 |---------|-------------|----------------|
 | **Model filename** | Name for your new model | `my_forest_model.pth` |
-| **Epochs** | How many times the model studies the data | 1000-2000 for fine-tuning |
+| **Epochs** | How many times the model studies the data | 100-400 for fine-tuning |
 | **Learning rate** | How fast the model learns (smaller = more careful) | 0.000025 (the default is good) |
-| **Training batch size** | How many samples at once | 2-8 (lower if you get memory errors) |
+| **Training batch size** | How many samples at once | 2-10 (higher if you have VRAM to spare) |
 | **Device** | Use GPU or CPU | `cuda` if you have a GPU |
 | **Load existing model** | Start from the existing model (recommended) | Checked (yes) |
 | **Class weights** | Give extra attention to rare classes | Auto (recommended) |
@@ -171,23 +230,104 @@ Under **Step 4: Configure Training**, set these options:
 
 **Class weights: Auto** — In most forests, there are many more ground and vegetation points than CWD or stem points. Without class weights, the model might ignore the rare classes. "Auto" fixes this by paying extra attention to the classes with fewer points.
 
-**Epochs** — More epochs means the model studies longer. For fine-tuning an existing model with new data, 1000-2000 epochs is usually enough. If training from scratch, use 3000-5000.
+**Epochs** — Each epoch is one full pass through your training data. More is not always better — training too long causes overfitting (see the loss chart section below). Recommended epochs:
+
+| Scenario | Epochs | Why |
+|----------|--------|-----|
+| Fine-tuning with existing model (recommended) | 100-400 | The model already knows forests. It just needs to learn your specific trees. |
+| Training from scratch (no existing model) | 1000-3000 | Starting from zero takes much longer. |
+| Lots of training data (5+ scans) | 200-600 | More data means the model can learn longer without overfitting. |
+| Very little data (1 scan) | 50-150 | With limited data, the model overfits quickly. Stop early. |
+
+**Training batch size** — This controls how many training boxes the model processes at once. Higher values use more GPU memory but can be slightly faster. A batch size of 2 works on most GPUs. If you have a GPU with lots of VRAM (24 GB+), try 4-10.
 
 ---
 
-## Step 9: Train the Model
+## Step 10: Train the Model
 
 1. Click **Start Training**
-2. The progress bar shows the current epoch, loss (how wrong the model is — lower is better), and accuracy
-3. Training takes from 10 minutes to several hours depending on:
-   - How much training data you have
-   - How many epochs you set
-   - Your GPU speed
-4. When finished, you will see a message telling you where the model was saved
+2. Watch the **training console** at the bottom of Step 5 — it shows detailed output from each epoch including loss and accuracy
+3. The **GPU monitor** shows your GPU utilization and memory usage during training
+4. The **loss chart** updates in real time (see below for how to read it)
+5. You can **Pause** training to check on things and **Resume** when ready
+6. You can **Stop** training at any time — the model is saved after every epoch, so you do not lose progress
+
+Training takes from a few minutes to several hours depending on:
+- How much training data you have
+- How many epochs you set
+- Your GPU speed and batch size
+
+When finished, you will see a message telling you where the model was saved.
 
 ---
 
-## Step 10: Use Your New Model
+## How to Read the Training Loss Chart
+
+The loss chart is the most important tool for understanding whether your training is working well. It shows two lines:
+
+- **Green line (Train)** — how wrong the model is on the training data
+- **Orange line (Validation)** — how wrong the model is on data it has never seen
+
+**Lower loss = better.** Both lines should go down over time.
+
+### What Good Training Looks Like
+
+```
+Loss
+ 3 |
+   |  \
+ 2 |   \  _____ orange (validation)
+   |    \/
+ 1 |     \_____ green (training)
+   |
+ 0 +------------>
+   0    50   100   Epoch
+```
+
+Both lines drop together and level off at similar values. The model is learning patterns that work on new data too.
+
+### What Overfitting Looks Like
+
+```
+Loss
+ 3 |
+   |  \
+ 2 |   \   ___/--- orange going UP (bad!)
+   |    \ /
+ 1 |     X
+   |      \_____ green keeps dropping
+ 0 +------------>
+   0    50   100   Epoch
+```
+
+The green line keeps going down, but the orange line stops improving or goes back up. This means the model is **memorizing** the training data instead of learning general patterns. It will perform well on the training data but poorly on new scans.
+
+**What to do when you see overfitting:**
+1. **Stop training** — the best model was saved at the epoch where validation loss was lowest
+2. **Add more training data** — this is the most effective fix
+3. **Reduce epochs** — next time, train for fewer epochs (stop around where validation loss was at its lowest)
+4. **Check your data** — make sure you have validation data in `data/validation/` (see Step 7)
+
+### What a Noisy/Spiky Chart Means
+
+If the orange (validation) line is very spiky and jumpy:
+- Your **validation dataset is too small** — add more labeled data to `data/validation/`
+- A smooth validation curve means enough validation data for reliable measurement
+
+### Summary Table
+
+| What You See | What It Means | What to Do |
+|-------------|---------------|------------|
+| Both lines drop together | Training is working well | Keep going, stop when they level off |
+| Green drops, orange stays flat | Starting to overfit | Stop soon, add more data |
+| Green drops, orange goes up | Overfitting | Stop now, use the model from earlier epochs |
+| Orange is very spiky | Validation set too small | Add more data to `data/validation/` |
+| Neither line drops | Model is not learning | Check labels for errors, try higher learning rate |
+| Both lines drop but are far apart | Mild overfitting | Add more data, try fewer epochs |
+
+---
+
+## Step 11: Use Your New Model
 
 1. Go to the **Process** tab
 2. Under **Model**, click **Import Model** and select your new `.pth` file
@@ -217,7 +357,10 @@ Fix the biggest mistakes
 Save corrected labels
       |
       v
-Train a new model
+Split into training and validation sets
+      |
+      v
+Train a new model (watch the loss chart!)
       |
       v
 Run pipeline again (with new model)
@@ -234,9 +377,18 @@ Each time you go through this cycle, the model gets better at recognizing your s
 
 ### How Much Data Do You Need?
 
-- **Minimum**: 1 corrected scan (the model will improve but may not generalize well)
+- **Minimum**: 1 corrected scan, split into training and validation pieces (the model will improve but may not generalize well)
 - **Good**: 3-5 corrected scans from different parts of your forest
 - **Best**: 5-10 scans covering the variety of conditions in your area
+
+### Where Does Each File Go?
+
+| What | Where | Purpose |
+|------|-------|---------|
+| Labeled .las files for learning | `data/train/` | The model studies these to learn |
+| Labeled .las files for testing | `data/validation/` | The model is tested on these but never learns from them |
+| Your trained model | `model/` | Saved automatically after each epoch |
+| Training history | `model/training_history.csv` | Epoch-by-epoch loss and accuracy numbers |
 
 ### What to Focus On When Correcting
 
@@ -273,13 +425,22 @@ A model trained on Amazon rainforest will not work well on mangroves, and vice v
 - Add more training data
 
 ### Results are worse after training
+- The model may be overfitting — check the loss chart (see above). The best model is from the epoch where validation loss was lowest, not the last epoch
 - You may have too few corrected scans — add more training data
 - The corrections may have introduced errors — double-check your labels
-- Try fewer epochs (the model may be "over-fitting" — memorizing instead of learning)
+
+### Validation loss is going up while training loss goes down
+- This is overfitting. See the "How to Read the Training Loss Chart" section above
+- Stop training and use the model from an earlier epoch
+- Next time, train for fewer epochs and add more data
 
 ### The model is good for one area but bad for another
 - This is normal. Different forests need different training data
 - Add corrected scans from the problem area and retrain
+
+### No validation line on the loss chart
+- You need labeled data in `data/validation/` — see Step 7
+- Make sure "Run validation during training" is checked in Step 4
 
 ---
 
@@ -287,14 +448,16 @@ A model trained on Amazon rainforest will not work well on mangroves, and vice v
 
 | Task | Where to Find It |
 |------|-----------------|
-| Run pipeline | Process tab → Run Pipeline |
-| Open Label Editor | Training tab → Step 3 → Open Label Editor |
-| See confidence colors | Label Editor → press C |
-| Select uncertain points | Label Editor → Select Low Confidence |
-| Fix a label | Select points → press 1/2/3/4 |
-| Hide a class | Label Editor → uncheck the class checkbox |
+| Run pipeline | Process tab > Run Pipeline |
+| Open Label Editor | Training tab > Step 3 > Open Label Editor |
+| See confidence colors | Label Editor > press C |
+| Select uncertain points | Label Editor > Select Low Confidence |
+| Fix a label | Select points > press 1/2/3/4 |
+| Hide a class | Label Editor > uncheck the class checkbox |
 | Set camera focus | Press F, then right-click a point |
-| Save corrections | Label Editor → Save Labels |
-| Import for training | Training tab → Step 1 → Import Files |
-| Start training | Training tab → Step 5 → Start Training |
-| Use new model | Process tab → Import Model |
+| Save corrections | Label Editor > Save Labels |
+| Import for training | Training tab > Step 1 > Import Files |
+| Pause training | Training tab > Step 5 > Pause |
+| Stop training | Training tab > Step 5 > Stop |
+| Start training | Training tab > Step 5 > Start Training |
+| Use new model | Process tab > Import Model |
