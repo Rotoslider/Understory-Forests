@@ -15,9 +15,11 @@ import shutil
 
 
 class TrainModel:
-    def __init__(self, parameters, progress_callback=None):
+    def __init__(self, parameters, progress_callback=None, cancel_event=None, pause_event=None):
         self.parameters = parameters
         self._progress_callback = progress_callback
+        self._cancel_event = cancel_event
+        self._pause_event = pause_event
 
         if self.parameters["num_cpu_cores_preprocessing"] == 0:
             print("Using default number of CPU cores (all of them).")
@@ -304,6 +306,22 @@ class TrainModel:
         val_epoch_acc = 0
 
         for epoch in range(self.parameters["num_epochs"]):
+            # Check for cancel/pause between epochs
+            if self._cancel_event and self._cancel_event.is_set():
+                print("Training stopped by user.")
+                break
+            if self._pause_event and self._pause_event.is_set():
+                print("Training paused...")
+                while self._pause_event.is_set():
+                    if self._cancel_event and self._cancel_event.is_set():
+                        print("Training stopped by user.")
+                        break
+                    import time
+                    time.sleep(0.5)
+                else:
+                    print("Training resumed.")
+                if self._cancel_event and self._cancel_event.is_set():
+                    break
             print("=====================================================================")
             print("EPOCH ", epoch)
             # TRAINING

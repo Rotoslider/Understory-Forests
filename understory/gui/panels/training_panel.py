@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -41,35 +42,76 @@ from PySide6.QtWidgets import (
 from understory.gui.tooltips import get_tooltip
 
 
+class _SignalStream:
+    """File-like stream that emits a Qt signal on write, for stdout capture."""
+
+    def __init__(self, signal):
+        self._signal = signal
+        self._buf = ""
+
+    def write(self, text: str) -> int:
+        if not text:
+            return 0
+        self._buf += text
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            if line:
+                self._signal.emit(line)
+        return len(text)
+
+    def flush(self) -> None:
+        if self._buf:
+            self._signal.emit(self._buf)
+            self._buf = ""
+
+
 class TrainingWorker(QThread):
     """Runs model training in a background thread."""
 
     progress = Signal(int, float, float, float, float)  # epoch, train_loss, train_acc, val_loss, val_acc
     finished = Signal(str)  # model path
     error = Signal(str)
+    log_output = Signal(str)  # captured stdout/stderr line
 
-    def __init__(self, parameters: dict, parent: Optional[QWidget] = None):
+    def __init__(self, parameters: dict, cancel_event: threading.Event,
+                 pause_event: threading.Event, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self._params = parameters
+        self._cancel_event = cancel_event
+        self._pause_event = pause_event
 
     def _on_epoch(self, epoch, train_loss, train_acc, val_loss, val_acc):
         self.progress.emit(epoch, train_loss, train_acc, val_loss, val_acc)
 
     def run(self) -> None:
+        stream = _SignalStream(self.log_output)
+        old_stdout, old_stderr = sys.stdout, sys.stderr
+        sys.stdout = stream
+        sys.stderr = stream
         try:
             scripts_dir = str(Path(__file__).parent.parent.parent.parent / "scripts")
             if scripts_dir not in sys.path:
                 sys.path.insert(0, scripts_dir)
 
             from train import TrainModel
-            trainer = TrainModel(self._params, progress_callback=self._on_epoch)
+            trainer = TrainModel(
+                self._params,
+                progress_callback=self._on_epoch,
+                cancel_event=self._cancel_event,
+                pause_event=self._pause_event,
+            )
             trainer.run_training()
 
+            stream.flush()
             from tools import get_fsct_path
             model_path = os.path.join(get_fsct_path("model"), self._params["model_filename"])
             self.finished.emit(model_path)
         except Exception as e:
+            stream.flush()
             self.error.emit(str(e))
+        finally:
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
 
 
 class TrainingChartCanvas:
@@ -336,10 +378,39 @@ class TrainingPanel(QWidget):
         self._train_status = QLabel("Ready to train")
         s5_layout.addWidget(self._train_status)
 
+        # GPU monitor
+        self._gpu_label = QLabel("GPU: N/A")
+        self._gpu_label.setStyleSheet("font-size: 11px; color: #2d7a5e;")
+        self._gpu_label.setVisible(False)
+        s5_layout.addWidget(self._gpu_label)
+
+        # Control buttons
+        btn_row = QHBoxLayout()
+
         self._train_btn = QPushButton("Start Training")
         self._train_btn.setObjectName("runButton")
         self._train_btn.clicked.connect(self._start_training)
-        s5_layout.addWidget(self._train_btn)
+        btn_row.addWidget(self._train_btn)
+
+        self._pause_btn = QPushButton("Pause")
+        self._pause_btn.setEnabled(False)
+        self._pause_btn.clicked.connect(self._toggle_pause)
+        btn_row.addWidget(self._pause_btn)
+
+        self._stop_btn = QPushButton("Stop")
+        self._stop_btn.setEnabled(False)
+        self._stop_btn.clicked.connect(self._stop_training)
+        btn_row.addWidget(self._stop_btn)
+
+        s5_layout.addLayout(btn_row)
+
+        # Console output
+        from PySide6.QtWidgets import QTextEdit
+        self._console = QTextEdit()
+        self._console.setReadOnly(True)
+        self._console.setMaximumHeight(120)
+        self._console.setPlaceholderText("Training output...")
+        s5_layout.addWidget(self._console)
 
         layout.addWidget(step5)
         layout.addStretch()
@@ -451,16 +522,57 @@ class TrainingPanel(QWidget):
         )
 
         self._train_btn.setEnabled(False)
+        self._pause_btn.setEnabled(True)
+        self._stop_btn.setEnabled(True)
         self._train_progress.setVisible(True)
         self._train_progress.setRange(0, parameters["num_epochs"])
         self._train_status.setText("Training...")
+        self._console.clear()
         self._chart.reset()
 
-        self._worker = TrainingWorker(parameters)
+        # Start GPU monitor
+        from understory.gui.main_window import GpuMonitor
+        if not hasattr(self, "_gpu_monitor"):
+            self._gpu_monitor = GpuMonitor(interval_ms=2000, parent=self)
+            self._gpu_monitor.updated.connect(self._gpu_label.setText)
+        self._gpu_label.setVisible(True)
+        self._gpu_monitor.start()
+
+        self._cancel_event = threading.Event()
+        self._pause_event = threading.Event()
+
+        self._worker = TrainingWorker(parameters, self._cancel_event, self._pause_event)
         self._worker.progress.connect(self._on_train_progress)
+        self._worker.log_output.connect(self._on_log_output)
         self._worker.finished.connect(self._on_train_finished)
         self._worker.error.connect(self._on_train_error)
         self._worker.start()
+
+    def _toggle_pause(self) -> None:
+        if not self._worker or not self._worker.isRunning():
+            return
+        if self._pause_event.is_set():
+            self._pause_event.clear()
+            self._pause_btn.setText("Pause")
+            self._train_status.setText("Resumed...")
+        else:
+            self._pause_event.set()
+            self._pause_btn.setText("Resume")
+            self._train_status.setText("Paused")
+
+    def _stop_training(self) -> None:
+        if not self._worker or not self._worker.isRunning():
+            return
+        self._cancel_event.set()
+        # Also clear pause so the loop can exit
+        self._pause_event.clear()
+        self._stop_btn.setEnabled(False)
+        self._pause_btn.setEnabled(False)
+        self._train_status.setText("Stopping (after current epoch)...")
+
+    @Slot(str)
+    def _on_log_output(self, text: str) -> None:
+        self._console.append(text)
 
     @Slot(int, float, float, float, float)
     def _on_train_progress(self, epoch: int, loss: float, acc: float, val_loss: float = 0, val_acc: float = 0) -> None:
@@ -471,16 +583,26 @@ class TrainingPanel(QWidget):
         self._train_status.setText(status)
         self._chart.add_epoch(epoch, loss, val_loss)
 
+    def _stop_monitoring(self) -> None:
+        """Stop GPU monitor and reset control buttons."""
+        if hasattr(self, "_gpu_monitor"):
+            self._gpu_monitor.stop()
+        self._gpu_label.setVisible(False)
+        self._train_btn.setEnabled(True)
+        self._pause_btn.setEnabled(False)
+        self._pause_btn.setText("Pause")
+        self._stop_btn.setEnabled(False)
+
     @Slot(str)
     def _on_train_finished(self, model_path: str) -> None:
-        self._train_btn.setEnabled(True)
+        self._stop_monitoring()
         self._train_progress.setVisible(False)
         self._train_status.setText(f"Training complete! Model saved: {model_path}")
         QMessageBox.information(self, "Training Complete", f"Model saved to:\n{model_path}")
 
     @Slot(str)
     def _on_train_error(self, msg: str) -> None:
-        self._train_btn.setEnabled(True)
+        self._stop_monitoring()
         self._train_progress.setVisible(False)
         self._train_status.setText(f"Error: {msg}")
         QMessageBox.critical(self, "Training Error", msg)
