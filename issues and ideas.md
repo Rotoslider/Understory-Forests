@@ -1,6 +1,7 @@
 cd ~/projects/FSCT
 ./venv/bin/python -m understory
 ------------------------------------------------
+
 Console now on only shows starting pipeline and done. Much is now missing. Does not show things like:
 Pre-processing point cloud...
 Created 564 boxes for semantic segmentation.
