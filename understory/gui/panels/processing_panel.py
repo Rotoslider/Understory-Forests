@@ -43,6 +43,30 @@ from understory.config.settings import ProjectConfig
 from understory.gui.tooltips import get_tooltip
 
 
+class _SignalStream:
+    """File-like stream that emits a Qt signal on write, for stdout capture."""
+
+    def __init__(self, signal):
+        self._signal = signal
+        self._buf = ""
+
+    def write(self, text: str) -> int:
+        if not text:
+            return 0
+        # Buffer partial lines; emit on newline
+        self._buf += text
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            if line:  # skip empty lines from trailing newlines
+                self._signal.emit(line)
+        return len(text)
+
+    def flush(self) -> None:
+        if self._buf:
+            self._signal.emit(self._buf)
+            self._buf = ""
+
+
 class PipelineWorker(QThread):
     """Runs the FSCT pipeline in a background thread."""
 
@@ -50,6 +74,7 @@ class PipelineWorker(QThread):
     finished = Signal(str)  # output_dir
     error = Signal(str, str)  # short user message, full traceback
     cancelled = Signal()
+    log_output = Signal(str)  # captured stdout/stderr line
 
     def __init__(self, config: ProjectConfig, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -64,13 +89,22 @@ class PipelineWorker(QThread):
         # Force non-interactive Matplotlib backend for background thread
         import matplotlib
         matplotlib.use("Agg")
+
+        # Redirect stdout/stderr so print() output appears in console
+        stream = _SignalStream(self.log_output)
+        old_stdout, old_stderr = sys.stdout, sys.stderr
+        sys.stdout = stream
+        sys.stderr = stream
         try:
             from understory.core.pipeline import run_pipeline, PipelineStageError, PipelineCancelled
             result = run_pipeline(self._config, progress_callback=self._emit_progress, cancel_event=self._cancel_event)
+            stream.flush()
             self.finished.emit(result.get("output_dir", ""))
         except PipelineCancelled:
+            stream.flush()
             self.cancelled.emit()
         except Exception as e:
+            stream.flush()
             tb = traceback.format_exc()
             from understory.core.pipeline import PipelineStageError
             if isinstance(e, PipelineStageError):
@@ -78,6 +112,8 @@ class PipelineWorker(QThread):
             else:
                 self.error.emit(str(e), tb)
         finally:
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
             # Always release GPU memory when pipeline thread exits
             try:
                 import torch
@@ -1517,6 +1553,7 @@ class ProcessingPanel(QWidget):
 
         self._worker = PipelineWorker(config)
         self._worker.progress.connect(self._on_progress)
+        self._worker.log_output.connect(self._log)
         self._worker.finished.connect(self._on_finished)
         self._worker.error.connect(self._on_error)
         self._worker.cancelled.connect(self._on_cancelled)

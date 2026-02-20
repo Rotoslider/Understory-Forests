@@ -89,12 +89,16 @@ def subsample_point_cloud(pointcloud, min_spacing, num_cpu_cores=1):
         Xmax = np.max(pointcloud[:, 0])
         Xrange = Xmax - Xmin
         slice_list = []
-        kdtree = spatial.cKDTree(np.atleast_2d(pointcloud[:, 0]).T, leafsize=10000)
+        slice_width = Xrange / num_slices
         for i in range(num_slices):
-            min_bound = Xmin + i * (Xrange / num_slices)
-            results = kdtree.query_ball_point(np.array([min_bound]), r=Xrange / num_slices)
-            # mask = np.logical_and(pointcloud[:, 0] >= min_bound, pointcloud[:, 0] < max_bound)
-            pc_slice = pointcloud[results]
+            min_bound = Xmin + i * slice_width
+            max_bound = Xmin + (i + 1) * slice_width
+            if i == num_slices - 1:
+                # Last slice includes the upper boundary
+                mask = np.logical_and(pointcloud[:, 0] >= min_bound, pointcloud[:, 0] <= max_bound)
+            else:
+                mask = np.logical_and(pointcloud[:, 0] >= min_bound, pointcloud[:, 0] < max_bound)
+            pc_slice = pointcloud[mask]
             print("Slice size:", pc_slice.shape[0], "    Slice number:", i + 1, "/", num_slices)
             slice_list.append([pc_slice, min_spacing])
 

@@ -213,14 +213,14 @@ class TrainModel:
             root_dir=os.path.join(get_fsct_path("data"), "train/sample_dir/"),
             device=self.device,
             min_sample_points=self.parameters["min_points_per_box"],
-            max_sample_points=parameters["max_points_per_box"],
+            max_sample_points=self.parameters["max_points_per_box"],
         )
         if len(train_dataset) == 0:
             raise NoDataFound("No training samples found.")
 
         self.train_loader = DataLoader(
             train_dataset,
-            batch_size=parameters["train_batch_size"],
+            batch_size=self.parameters["train_batch_size"],
             shuffle=True,
             num_workers=self.parameters["num_cpu_cores_deep_learning"],
             drop_last=True,
@@ -237,7 +237,7 @@ class TrainModel:
 
             self.validation_loader = DataLoader(
                 validation_dataset,
-                batch_size=parameters["validation_batch_size"],
+                batch_size=self.parameters["validation_batch_size"],
                 shuffle=True,
                 num_workers=self.parameters["num_cpu_cores_deep_learning"],
                 drop_last=True,

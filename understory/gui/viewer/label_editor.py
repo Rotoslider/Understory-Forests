@@ -330,9 +330,7 @@ class LabelEditor(QWidget):
             self._plotter.enable_surface_point_picking(
                 callback=self._on_brush_pick,
                 show_message=False,
-                show_point=True,
-                color="cyan",
-                point_size=10,
+                show_point=False,
                 picker="cell",
             )
         else:
