@@ -638,8 +638,8 @@ This is purely visual — it hides points temporarily but does not delete or mod
 You can measure distances directly in the 3D viewer:
 
 1. Go to **Tools > Measure Distance** (for 3D straight-line distance) or **Tools > Measure Height** (for vertical height difference)
-2. Click a point in the cloud — this sets the first endpoint
-3. Click a second point — a line appears with the measurement value
+2. Right Click a point in the cloud — this sets the first endpoint
+3. Right Click a second point — a line appears with the measurement value
 
 **Tips:**
 - Press **Escape** to cancel a measurement in progress

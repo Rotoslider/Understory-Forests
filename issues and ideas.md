@@ -1,13 +1,77 @@
 cd ~/projects/FSCT
 ./venv/bin/python -m understory
 ------------------------------------------------
-Commit fea323f is your safety net.
-----------------------------------------------
+Console now on only shows starting pipeline and done. Much is now missing. Does not show things like:
+Pre-processing point cloud...
+Created 564 boxes for semantic segmentation.
+Preprocessing took 56.16688275337219 s
+Preprocessing done
+Semantic segmentation done
+Making DTM...
+DTM Done
+Making and clustering slices...
+ 467 / 467
+Done
+Clustering skeleton...
+Making kdtree...
+Making initial branch/stem section clusters...
+ 3600 / 3600
+Done
+Starting multithreaded cylinder fitting... This can take a while.
+ 3600 / 3600
+Done
+Making full_cyl visualisation...
+ 1856 / 1856
+Done
+Cylinder interpolation...
+Cylinder Outlier Removal...
+ 14 / 1414
+Done
+Starting multithreaded cylinder cleaning/smoothing...
+ 14 / 14
+Done
+Making cleaned cylinder visualisation...
+ 558 / 558
+Done
+Measuring plot took 609.0820257663727 s (Change to Minutes and Seconds)
+Measuring plot done.
+Then your existing Pipeline complete! Output:
+There needs to be better use of the above information in the Console and the % done bars
+had this error when using the label editor: 026-02-19 16:24:59.302 (6889.591s) [    7F88F1E53080]vtkOpenGLHardwareSelect:247    ERR| vtkOpenGLHardwareSelector (0x7f84559bef10): Too many props. Currently only 16777214 props are supported.
+ERROR:root:Too many props. Currently only 16777214 props are supported.
+Tried running the training and have an error name'parameter' is not defined
+
+Why do i have more subsampled points than before:
+Subsampling...
+Original number of points: 6724794
+Slice size: 17160     Slice number: 1 / 22
+Slice size: 46102     Slice number: 2 / 22
+Slice size: 167427     Slice number: 3 / 22
+Slice size: 304879     Slice number: 4 / 22
+Slice size: 352555     Slice number: 5 / 22
+Slice size: 366421     Slice number: 6 / 22
+Slice size: 372815     Slice number: 7 / 22
+Slice size: 505292     Slice number: 8 / 22
+Slice size: 573524     Slice number: 9 / 22
+Slice size: 572261     Slice number: 10 / 22
+Slice size: 604944     Slice number: 11 / 22
+Slice size: 595210     Slice number: 12 / 22
+Slice size: 630288     Slice number: 13 / 22
+Slice size: 928508     Slice number: 14 / 22
+Slice size: 1323693     Slice number: 15 / 22
+Slice size: 1289959     Slice number: 16 / 22
+Slice size: 1106046     Slice number: 17 / 22
+Slice size: 1036019     Slice number: 18 / 22
+Slice size: 950636     Slice number: 19 / 22
+Slice size: 827675     Slice number: 20 / 22
+Slice size: 563463     Slice number: 21 / 22
+Slice size: 252468     Slice number: 22 / 22
+Subsampled number of points: 13197420
 Main App opens in a windowed view which is great. If I try to drag the window it changes to full screen for a second then back to original size and then I can drag without issue. Only happens first drag after launch.
 
 It would be helpful when preparing a point cloud to be able to draw a poly-line and or box around an area of cloud to remove or keep points. Typically a scan captures unwanted data at the edges that need trimmed to get the proper plot area.
 
-Issues with the Label Editor:
+Issues with the Label Editor: none so far
 
 ------------------------------------------------------------
 Add more labels to classify. canopy plus understory brush. 
@@ -15,7 +79,6 @@ Add Dead tree detection
 
 -----------------------------------------------------------------------------------------------------------------
 ## Additional Functionality to Implement
-
 
 ### Training & Label Editor
 
@@ -35,6 +98,194 @@ Add Dead tree detection
 | **Console log export** | Save console log to text file | Low |
 | **Metric/imperial units** | Configurable unit display | Medium |
 
+### Performance
+
+| Feature | Description | Complexity |
+|---------|-------------|------------|
+| **Fix O(n^2) vstack in measure.py** | ~45 instances of `np.vstack()` inside loops — convert to list-append | Medium |
+| **Multiprocessing for preprocessing** | Replace threaded_boxes() with true multiprocessing | Medium |
+| **LAZ compression** | Native compressed .laz read/write without decompression step | Low |
+
+Here is Claude's plan:
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ Implementation Plan: 13 Features (Training, QoL, Performance)
+
+ Context
+
+ The user wants to implement all features from their feature roadmap across three categories:
+ Training & Label Editor, Quality of Life, and Performance. These are additive enhancements
+ that improve the existing Understory Forests desktop app.
+
+ Git rule: Commit working state BEFORE each feature, commit after each feature.
+
+ ---
+ Phase 1: Low-Risk Quick Wins
+
+ 1. Console Log Export
+
+ File: understory/gui/panels/processing_panel.py
+ - Add "Save Log" button below the console QTextEdit (~line 286)
+ - _save_console_log(): QFileDialog.getSaveFileName → write self._console.toPlainText() to
+ .txt
+
+ 2. Status Bar Point Count
+
+ File: understory/gui/main_window.py
+ - Add self._point_count_status = QLabel("") as permanent status bar widget in
+ _setup_status_bar()
+ - Update it on file load, subsample, crop, and close operations
+ - Format: "{displayed:,} / {total:,} points" or "{count:,} points"
+
+ 3. Settings Persistence
+
+ File: understory/gui/main_window.py
+ - Store splitter as self._splitter (currently local variable)
+ - _restore_settings(): restore geometry, state, splitter, last directory, color mode from
+ QSettings
+ - closeEvent(): save all the above to QSettings
+ - Update all QFileDialog calls to use self._last_directory as starting path
+
+ 4. LAZ Compression
+
+ Files: scripts/tools.py, requirements.txt
+ - Add lazrs>=0.6.0 to requirements.txt
+ - In save_file(): accept .laz extension, call las.write(filename,
+ laz_backend=laspy.LazBackend.LazrsParallel)
+ - Update save dialogs in label_editor.py and processing_panel.py to offer .laz option
+
+ 5. Training Tutorial
+
+ Files: understory/gui/panels/training_panel.py, understory/gui/tooltips.py
+ - Add collapsible "Quick Start Guide" QGroupBox (checkable, collapsed by default) at top of
+ training panel
+ - Add _add_help_button() helper that inserts a small "?" QPushButton into each step's group
+ box
+ - Add missing tooltip entries in tooltips.py for model_filename, train_batch_size, etc.
+
+ ---
+ Phase 2: Medium-Risk Targeted Changes
+
+ 6. Fix O(n^2) vstack in measure.py
+
+ Files: scripts/measure.py, scripts/train.py
+
+ measure.py (~lines 940-1008, the tree assignment loop):
+ - The complication: sorted_full_cyl_array is rebuilt into a cKDTree each iteration, so it's
+ not a simple collect-then-vstack
+ - Solution: Pre-allocate output array at max possible size (full_cyl_array.shape[0] * 2
+ rows), use a write_idx pointer to fill it incrementally. Build cKDTree from
+ sorted_full_cyl_array[:write_idx, :3]
+ - This eliminates ALL vstack overhead — both accumulation and the per-iteration rebuild
+ - Small local vstacks (appending interpolated cylinders to tree) are fine (small arrays)
+
+ train.py (line 327, running_point_cloud_vis):
+ - Replace with vis_parts = [] + vis_parts.append(...) + single vstack when saving
+
+ 7. Metric/Imperial Units
+
+ Files: understory/gui/viewer/point_cloud_viewer.py, understory/gui/main_window.py
+ - Add UnitSystem enum and METERS_TO_FEET = 3.28084 constant
+ - Add unit_suffix/unit_factor properties and set_unit_system() method to PointCloudViewer
+ - Update _on_measure_pick() to multiply by unit_factor and use unit_suffix
+ - Add View > Units submenu with Metric/Imperial radio actions (QActionGroup)
+ - Persist choice in QSettings, restore on startup
+
+ 8. Dark Mode
+
+ Files: new understory/resources/styles/understory_dark.qss, understory/gui/main_window.py
+ - Create dark stylesheet: invert the forest palette (dark backgrounds #1a1a2e, light text
+ #d0e0d8, keep green accents)
+ - Modify _load_stylesheet() to check self._settings.value("theme/dark") and load appropriate
+ QSS
+ - Add View > Dark Mode checkable action
+ - _toggle_theme(): save pref, reload stylesheet, update PyVista background color
+ - Console/log stays dark (already is)
+
+ ---
+ Phase 3: Cross-File Changes
+
+ 9. Live Training Loss Plots
+
+ Files: scripts/train.py, understory/gui/panels/training_panel.py
+
+ train.py changes:
+ - Add progress_callback=None param to TrainModel.__init__()
+ - After each epoch's metrics are computed (~line 350), call self._progress_callback(epoch,
+ epoch_loss, epoch_acc, val_epoch_loss, val_epoch_acc) if set
+
+ training_panel.py changes:
+ - Expand signal: progress = Signal(int, float, float, float, float) (epoch, train_loss,
+ train_acc, val_loss, val_acc)
+ - TrainingWorker.run(): pass progress_callback=self._on_epoch to TrainModel; _on_epoch emits
+ signal
+ - Add TrainingChartCanvas(FigureCanvasQTAgg) class (follow growth_panel.py pattern)
+   - Two lines: train loss (green) + val loss (orange)
+   - Forest-themed styling matching existing charts
+   - add_epoch() method: append data, clear+redraw
+   - reset() method: clear all data
+ - Embed chart in Step 5 group box above progress bar
+ - _on_train_progress(): update chart + progress bar + status text
+
+ 10. Brush Selection for Label Editor
+
+ File: understory/gui/viewer/label_editor.py
+ - Add "Enable Brush (B)" checkable QPushButton in selection group
+ - Add _brush_mode flag, _toggle_brush() method
+ - Uses enable_surface_point_picking() with _on_brush_pick callback
+ - _on_brush_pick(): get click point → cKDTree query_ball_point(radius) → merge with existing
+ selection (additive)
+ - Existing brush radius spinbox already in toolbar — reuse it
+ - Keyboard shortcut: B to toggle
+ - Mutual exclusivity with box select and focus modes
+ - Note: True lasso selection deferred — brush covers the main use case
+
+ 11. Multiprocessing for Preprocessing
+
+ File: scripts/preprocessing.py
+ - Replace threading.Thread calls (lines 153-179) with
+ multiprocessing.get_context("spawn").Pool
+ - threaded_boxes() is already a static method with picklable args — clean fit for
+ Pool.starmap()
+ - Distribute point_divisions across workers, compute per-worker id_offsets
+ - Rename to process_boxes() for clarity
+
+ ---
+ Implementation Order
+
+ 1. Console log export
+ 2. Status bar point count
+ 3. Settings persistence
+ 4. LAZ compression
+ 5. Training tutorial
+ 6. Fix O(n^2) vstack
+ 7. Metric/imperial units
+ 8. Dark mode
+ 9. Live training loss plots
+ 10. Brush selection
+ 11. Multiprocessing preprocessing
+
+ Each feature gets its own commit for clean rollback.
+
+ Verification
+
+ - Launch app (python -m understory), verify each feature visually
+ - Test dark mode toggle back and forth
+ - Test measurement tools in both metric and imperial
+ - Test brush selection in label editor
+ - Test console log export writes correct file
+ - Test settings persist across app restart
+ - Save a .laz file, verify it loads back correctly
+ - Start a training run to verify live loss chart updates
+ - Run pipeline on a test cloud to verify vstack fix doesn't break tree assignment
+
+
+
+
+
+
+
+
+-----------------------------------------------------------------------------------------------
 ### Infrastructure
 
 | Feature | Description | Complexity |
@@ -43,15 +294,11 @@ Add Dead tree detection
 | **CI/CD pipeline** | GitHub Actions for automated testing on push | Medium |
 | **Standalone packaging** | PyInstaller or cx_Freeze executable for distribution | High |
 | **Documentation site** | Sphinx or MkDocs user guide with screenshots | Medium |
+
+### Infrastructure part 2
 | **Plugin system** | Third-party measurement or visualization plugins | High |
 
-### Performance
 
-| Feature | Description | Complexity |
-|---------|-------------|------------|
-| **Fix O(n^2) vstack in measure.py** | ~45 instances of `np.vstack()` inside loops — convert to list-append | Medium |
-| **Multiprocessing for preprocessing** | Replace threaded_boxes() with true multiprocessing | Medium |
-| **LAZ compression** | Native compressed .laz read/write without decompression step | Low |
 
 ---
 
@@ -106,295 +353,8 @@ Add Dead tree detection
 | **Screenshot export** | High-res screenshot of the current view | Low |
 | **Colorbar legend** | Color legend for active color mode (height scale, class labels) | Low |
 │
-│                                                                                                                  │
-│ Context                                                                                                          │
-│                                                                                                                  │
-│ The Understory Forests GUI has a working pipeline (preprocessing, segmentation, post-processing, measurement,    │
-│ report) with a 3D viewer, label editor, and training workflow. This plan covers 20 features across three         │
-│ categories: pipeline/UI improvements, report/analysis enhancements, and viewer tools. Features are grouped into  │
-│ three phases by effort and value.                                                                                │
-│                                                                                                                  │
-│ ---                                                                                                              │
-# Phase 1: Quick Wins (~1-2 days total)                                                                            │
-│                                                                                                                  │
-1. Screenshot Export                                                                                               │
-│                                                                                                                  │
-│ Effort: Small | Files: point_cloud_viewer.py, main_window.py                                                     │
-│                                                                                                                  │
-│ - Add export_screenshot(filepath, scale=2) method to PointCloudViewer using PyVista's built-in                   │
-│ plotter.screenshot()                                                                                             │
-│ - Add "Export Screenshot..." (Ctrl+Shift+E) action to View menu in MainWindow                                    │
-│ - File dialog filters: PNG, JPEG, TIFF 
-
-2. Recent Projects List                                                                                            │
-│                                                                                                                  │
-│ Effort: Small | Files: main_window.py                                                                            │
-│                                                                                                                  │
-│ - Use QSettings("Understory", "Understory") to persist up to 10 recently opened project/file paths               │
-│ - Add "Recent Projects" submenu under File menu                                                                  │
-│ - Hook into existing _open_project() and _on_file_loaded() to record paths                                       │
-│ - Each entry shows basename; tooltip shows full path                                                             │
-│                                                                                                                  │
-3. Drag-and-Drop                                                                                                   │
-│                                                                                                                  │
-│ Effort: Small | Files: main_window.py                                                                            │
-│                                                                                                                  │
-│ - Enable setAcceptDrops(True) on MainWindow                                                                      │
-│ - Override dragEnterEvent / dropEvent — accept .las, .laz, .pcd, .yaml, .yml                                     │
-│ - Point cloud files → _processing_panel.set_input_file(path)                                                     │
-│ - YAML files → _processing_panel.load_project(path)
-
-4. Colorbar Legend                                                                                                 │
-│                                                                                                                  │
-│ Effort: Small | Files: point_cloud_viewer.py                                                                     │
-│                                                                                                                  │
-│ - CLASSIFICATION mode: use plotter.add_legend() with entries from CLASS_COLORS dict                              │
-│ (Noise/Terrain/Vegetation/CWD/Stem)                                                                              │
-│ - HEIGHT mode: already has scalar bar (no change needed)                                                         │
-│ - TREE_ID mode: add text annotation "Colored by Tree ID"                                                         │
-│ - Clear legend on mode switch (already happens via plotter.clear())                                              │
-│                                                                                                                  │
-5. Additional Plot Metrics                                                                                         │
-│                                                                                                                  │
-│ Effort: Small | Files: report.py, report_template.html                                                           │
-│                                                                                                                  │
-│ - Compute from existing tree_data.csv columns:                                                                   │
-│   - Basal Area (m2/ha) = sum(pi * (DBH/2)^2) / plot_area                                                         │
-│   - QMD = sqrt(mean(DBH^2))                                                                                      │
-│   - Lorey's Height = sum(Height_i * BA_i) / sum(BA_i)                                                            │
-│   - Stand Density Index = stems_per_ha * (QMD / 0.254)^1.605                                                     │
-│ - Add "Stand Metrics" section with stat cards to report template                                                 │
-│                                                                                                                  │
-│ ---
----                                                                                                                │
-# Phase 2: Core Improvements (~3-5 days total)                                                                     │
-│                                                                                                                  │
-6. Cooperative Pipeline Cancellation                                                                               │
-│                                                                                                                  │
-│ Effort: Medium | Files: pipeline.py, processing_panel.py                                                         │
-│ Priority: First in phase (safety-critical)                                                                       │
-│                                                                                                                  │
-│ - Add threading.Event cancel flag to PipelineWorker                                                              │
-│ - Add PipelineWorker.request_stop() method that sets the event                                                   │
-│ - In pipeline.py, add cancel_event param to run_pipeline() — check is_set() before each stage                    │
-│ - New PipelineCancelled exception caught by worker, emits cancelled signal                                       │
-│ - Replace worker.terminate() in stop_pipeline() with worker.request_stop() + worker.wait(10s), fallback to       │
-│ terminate() if hung                                                                                              │
-│                                                                                                                  │
-7. Undo/Redo for Preparation                                                                                       │
-│                                                                                                                  │
-│ Effort: Medium | Files: point_cloud_viewer.py, main_window.py                                                    │
-│                                                                                                                  │
-│ - PrepareSnapshot dataclass stores (points, colors, labels, tree_ids, description) before each destructive       │
-│ operation                                                                                                        │
-│ - Stack stored in PointCloudViewer, max depth 5 (memory constraint for large clouds)                             │
-│ - push_undo() called before axis swap, crop, and subsample operations                                            │
-│ - Wire Ctrl+Z / Ctrl+Shift+Z shortcuts in MainWindow (only active in Prepare tab) 
-8. Taper Profile Charts                                                                                            │
-│                                                                                                                  │
-│ Effort: Medium | Files: report.py, report_template.html                                                          │
-│                                                                                                                  │
-│ - Load taper_data.csv (columns: TreeId, height increments 0.0-30.0m)                                             │
-│ - Generate matplotlib chart: height (Y) vs diameter (X), one line per tree                                       │
-│ - Standard forestry convention; brand color palette                                                              │
-│ - Add "Taper Profiles" section to report template                                                                │
-│                                                                                                                  │
-9. Crown Projection Map                                                                                            │
-│                                                                                                                  │
-│ Effort: Medium | Files: report.py, report_template.html                                                          │
-│                                                                                                                  │
-│ - Use Crown_mean_x, Crown_mean_y from tree_data.csv for canopy centroids                                         │
-│ - Plot circles with approximate crown radius (from crown area or DBH-based estimate)                             │
-│ - Overlay on DTM contour base map                                                                                │
-│ - Color by tree ID; include stem positions as dots                                                               │
-│ - Add to report as "Crown Projection Map" section                                                                │
-│                                                                                                                  │
-10. Cross-Section View                                                                                             │
-│                                                                                                                  │
-│ Effort: Medium | Files: point_cloud_viewer.py                                                                    │
-│                                                                                                                  │
-│ - Add slicer controls to viewer toolbar: mode combo (Off/Horizontal/Vertical), position spinbox, thickness       │
-│ spinbox                                                                                                          │
-│ - Filter _lod_indices during render: keep points where |point[axis] - pos| < thickness/2                         │
-│ - Slider for interactive positioning                                                                             │
-│ - Store _slice_axis, _slice_pos, _slice_thickness as viewer state                                                │
-│ - No data modification — purely visual filter
-11. Sub-Stage Progress                                                                                             │
-│                                                                                                                  │
-│ Effort: Medium | Files: pipeline.py, inference.py, optionally preprocessing.py, measure.py                       │
-│ Depends on: Feature 6 (cooperative cancellation adds check points)                                               │
-│                                                                                                                  │
-│ - Extend _run_stage() to create a sub-progress closure passed to legacy classes                                  │
-│ - Primary target: inference.py batch loop — report batch_index / total_batches                                   │
-│ - Secondary targets: preprocessing box generation, measurement phases                                            │
-│ - Legacy classes accept optional progress_callback parameter                                                     │
-│                                                                                                                  │
-│ ---                                                                                                              │
-# Phase 3: Advanced Features (~3-4 weeks total)                                                                    │
-│                                                                                                                  │
-12. Multi-File Batch Processing                                                                                    │
-│                                                                                                                  │
-│ Effort: Large | New file: batch_panel.py | Modify: processing_panel.py, main_window.py, pipeline.py              │
-│ Depends on: Feature 6 (cancellation)                                                                             │
-│                                                                                                                  │
-│ - New QDialog with file list, per-file status icons, add/remove buttons                                          │
-│ - Uses current ProcessingPanel settings for all files                                                            │
-│ - BatchPipelineWorker iterates over configs, emits per-file + overall progress                                   │
-│ - GPU memory cleanup (torch.cuda.empty_cache() + gc.collect()) between runs                                      │
-│ - "Batch Processing..." action in Tools menu
-13. Run Comparison Report                                                                                          │
-│                                                                                                                  │
-│ Effort: Large | New files: comparison.py, comparison_template.html | Modify: report.py, processing_panel.py      │
-│                                                                                                                  │
-│ - compare_runs(run_a_dir, run_b_dir) matches trees by TreeId from registry                                       │
-│ - Computes deltas: DBH change, height change, volume change                                                      │
-│ - Identifies new/removed trees between scans                                                                     │
-│ - Generates HTML comparison report with delta histograms, change tables, summary cards                           │
-│ - "Compare Runs" button in Results tab (enabled when 2+ runs exist)                                              │
-│                                                                                                                  │
-14. Growth Tracking Dashboard                                                                                      │
-│                                                                                                                  │
-│ Effort: Large | New file: growth_panel.py | Modify: tree_registry.py, main_window.py                             │
-│ Depends on: Feature 13 (comparison infrastructure)                                                               │
-│                                                                                                                  │
-│ - New QDialog with matplotlib canvas embedded                                                                    │
-│ - Tree selector (combo/list of registered trees)                                                                 │
-│ - Charts: DBH over time, height over time per selected tree(s)                                                   │
-│ - Scan history table                                                                                             │
-│ - Export growth data as CSV                                                                                      │
-│ - Enhance TreeRegistry.get_growth_data() for multi-tree queries                                                  │
-│ - "Growth Dashboard..." in Tools menu
-15. Allometric Equations                                                                                           │
-│                                                                                                                  │
-│ Effort: Large | New files: allometry.py, allometry_panel.py | Modify: settings.py, report.py                     │
-│                                                                                                                  │
-│ - AllometricEquation dataclass: name, formula string, variable list                                              │
-│ - AllometryRegistry: load/save equations from YAML, includes defaults (generic AGB, carbon)                      │
-│ - Formula evaluation: safe eval with restricted namespace (numpy math functions + tree_data columns)             │
-│ - QDialog for equation management: list, add/edit/remove, preview results                                        │
-│ - Computed columns added to tree_data and included in report                                                     │
-│                                                                                                                  │
-16. Export to GIS                                                                                                  │
-│                                                                                                                  │
-│ Effort: Medium-Large | New file: gis_export.py | Modify: processing_panel.py                                     │
-│                                                                                                                  │
-│ - GeoJSON export (pure Python, no extra dependencies): FeatureCollection with Point per tree, all attributes     │
-│ - Optional Shapefile export via geopandas (optional dependency)                                                  │
-│ - User-specified CRS string (LAS files typically use local coordinates)                                          │
-│ - "Export to GIS..." button in Results tab with format selector                                                  │
-│ - Document coordinate system limitations                                                                         │
-│                                                                                                                  │
-17. Measurement Tools                                                                                              │
-│                                                                                                                  │
-│ Effort: Large | Files: point_cloud_viewer.py, main_window.py                                                     │
-│                                                                                                                  │
-│ - MeasureMode enum: OFF, DISTANCE, HEIGHT, ANGLE                                                                 │
-│ - Point picking: first click stores point A, second click stores point B                                         │
-│ - Visual: plotter.add_lines() for measurement line, plotter.add_point_labels() for value                         │
-│ - Distance = Euclidean 3D, Height = |dZ|, Angle = atan2(dZ, horizontal_dist)                                     │
-│ - "Measure" submenu in Tools menu; Escape to cancel measurement
-18. Point Cloud Comparison                                                                                         │
-│                                                                                                                  │
-│ Effort: Large | Files: point_cloud_viewer.py, main_window.py                                                     │
-│                                                                                                                  │
-│ - "Compare Point Clouds..." in Tools menu → file dialog for second cloud                                         │
-│ - Compute nearest-neighbor distances from cloud B to cloud A (via scipy cKDTree)                                 │
-│ - Color by distance using diverging colormap (blue=close, red=far)                                               │
-│ - New ColorMode.COMPARISON in viewer                                                                             │
-│ - Display statistics: mean/max/std of distances                                                                  │
-│                                                                                                                  │
-19. Photo/Notes Attachment                                                                                         │
-│                                                                                                                  │
-│ Effort: Medium | Files: settings.py, processing_panel.py, report.py, report_template.html                        │
-│                                                                                                                  │
-│ - Add photos: list[str] to ProjectConfig                                                                         │
-│ - "Attach Photos" button in Project tab → multi-file QFileDialog                                                 │
-│ - Photos copied to project folder on save                                                                        │
-│ - Thumbnail display in Project tab                                                                               │
-│ - "Field Photos" grid section in report template                                                                 │
-│                                                                                                                  │
-20. Animation/Flythrough                                                                                           │
-│                                                                                                                  │
-│ Effort: Large | New file: flythrough.py | Modify: point_cloud_viewer.py, main_window.py                          │
-│ Depends on: Feature 1 (screenshot as building block)                                                             │
-│                                                                                                                  │
-│ - FlythroughEditor QDialog: define camera keyframes by capturing current view                                    │
-│ - Cubic spline interpolation on camera position + look-at point                                                  │
-│ - Frame rendering via plotter.screenshot() in loop                                                               │
-│ - Export as image sequence or GIF/MP4 (via imageio optional dependency)                                          │
-│ - "Flythrough Editor..." in View menu                                                                            │
-│                                                                                                                  │
-│ ---
-Dependency Graph                                                                                                   │
-│                                                                                                                  │
-│ Feature 6 (Cancel) ──> Feature 11 (Sub-stage Progress)                                                           │
-│                    ──> Feature 12 (Batch Processing)                                                             │
-│                                                                                                                  │
-│ Feature 13 (Comparison) ──> Feature 14 (Growth Dashboard)                                                        │
-│                                                                                                                  │
-│ Feature 1 (Screenshot) ──> Feature 20 (Flythrough)                                                               │
-│                                                                                                                  │
-│ All other features are independent.                                                                              │
-│                                                                                                                  │
-│ Critical Files (most frequently modified)                                                                        │
-│                                                                                                                  │
-│ ┌─────────────────────────────────────────────┬────────────────────────────────┐                                 │
-│ │                    File                     │      Features touching it      │                                 │
-│ ├─────────────────────────────────────────────┼────────────────────────────────┤                                 │
-│ │ understory/gui/main_window.py               │ 1, 2, 3, 7, 12, 14, 17, 18, 20 │                                 │
-│ ├─────────────────────────────────────────────┼────────────────────────────────┤                                 │
-│ │ understory/gui/viewer/point_cloud_viewer.py │ 1, 4, 7, 10, 17, 18            │                                 │
-│ ├─────────────────────────────────────────────┼────────────────────────────────┤                                 │
-│ │ understory/gui/panels/processing_panel.py   │ 6, 11, 12, 13, 16, 19          │                                 │
-│ ├─────────────────────────────────────────────┼────────────────────────────────┤                                 │
-│ │ understory/core/pipeline.py                 │ 6, 11, 12                      │                                 │
-│ ├─────────────────────────────────────────────┼────────────────────────────────┤                                 │
-│ │ understory/core/report.py                   │ 5, 8, 9, 13, 15, 19            │                                 │
-│ ├─────────────────────────────────────────────┼────────────────────────────────┤                                 │
-│ │ understory/resources/report_template.html   │ 5, 8, 9, 19                    │                                 │
-│ └─────────────────────────────────────────────┴────────────────────────────────┘                                 │
-│ 
-Verification                                                                                                     │
-│                                                                                                                  │
-│ Each feature should be tested by:                                                                                │
-│ 1. Launching the GUI (python -m understory) and exercising the new UI controls                                   │
-│ 2. Loading a point cloud and running through the relevant workflow                                               │
-│ 3. For report features: running the pipeline on test data and checking the generated HTML/PDF                    │
-│ 4. For viewer features: visually confirming correct rendering, camera behavior, and no regressions in existing   │
-│ tools (selection, confidence, painting)
-
--------------------------------------------------------
-
-All 20 features are now implemented and committed. Here's a summary:
-                                                                                                                    
+All 20 features are now implemented and committed. Here's a 
   Commit 0426a33 — 984 insertions across 8 files
-                                                 
-  Phase 1 (Quick Wins) — Complete
-                                                                                                                    
-  1. Screenshot Export — Ctrl+Shift+E in View menu, uses PyVista screenshot() at 2x
-  2. Recent Projects — Up to 10 entries via QSettings, auto-recorded on file open
-  3. Drag-and-Drop — .las/.laz/.pcd/.yaml/.yml accepted on main window
-  4. Colorbar Legend — Classification legend with class names/colors, Tree ID annotation
-  5. Stand Metrics — Basal area, QMD, Lorey's height, SDI in report
-
-  Phase 2 (Core Improvements) — Complete
-
-  6. Cooperative Cancellation — threading.Event + PipelineCancelled replaces terminate()
-  7. Undo/Redo — 5-deep snapshot stack for Prepare tab (crop, axis swap)
-  8. Taper Profile Charts — Height vs diameter per tree in report
-  9. Crown Projection Map — Overhead canopy view in report
-  10. Cross-Section View — Horizontal/vertical slice controls in viewer toolbar
-  11. Sub-Stage Progress — Inference batch progress piped through to progress bar
-
-  Phase 3 (Advanced Features) — Complete
-
-  12-16. Batch Processing, Comparison, Growth, Allometry, GIS Export — Menu integration + scaffolding modules
-  17. Measurement Tools — Distance/height with visual line + label in viewer
-  18. Point Cloud Comparison — NN distance coloring with RdYlBu_r diverging colormap
-  19. Photo Attachment — Full pipeline: settings → panel → pipeline → report template
-  20. Flythrough — Menu integration + scaffolding editor
-
-
 -----------------------------------------------------
 
 ideas from Sean K
@@ -480,79 +440,7 @@ Install full dependencies and environment to run
 Write and implement testing of each part that you perform. 
 
 ---------------------------------------------------------------
-Phase 1: Configuration System & Core Refactoring
-
- Goal: Replace hardcoded parameter dicts with structured config. Add PCD input support.
-
- 1.1 Configuration dataclasses (understory/config/settings.py)
-
- Extract parameters from run.py (lines 20-51) and other_parameters.py into:
- - ProcessingConfig — plot_centre, plot_radius, slice_thickness, etc.
- - ModelConfig — model_filename, box_dimensions, min/max_points_per_box
- - OutputConfig — output_directory, content toggles
- - ProjectConfig — top-level, includes project name/notes, saves as YAML
-
- Bridge method to_legacy_params() converts structured config back to the flat dict all
- existing pipeline classes expect — enabling incremental migration.
-
- 1.2 Refactor shared path construction (understory/core/paths.py)
-
- All 5 pipeline classes duplicate the same output_dir construction logic. Create FSCTPaths
- class that standardizes this.
-
- 1.3 Add PCD input support (scripts/tools.py)
-
- Extend load_file() and save_file() to handle .pcd via Open3D. Keep LAS as default output.
-
- 1.4 Pipeline wrapper (understory/core/pipeline.py)
-
- Modern wrapper around FSCT() from run_tools.py. Accepts ProjectConfig, converts to legacy
- params, runs pipeline. Accepts optional progress_callback for GUI integration.
-
- 1.5 Verification
-
- - YAML project save/load round-trips
- - Pipeline runs through new wrapper with identical output
- - PCD files load correctly
-
- ---
- Phase 2: GUI Foundation & Point Cloud Viewer
-
- Goal: PySide6 app shell with 3D PyVista point cloud viewer capable of handling 500M points
- via LOD.
-
- 2.1 Main window layout (understory/gui/main_window.py)
-
- +------------------------------------------------------------------+
- |  [Understory Logo]  File  View  Tools  Help                       |
- +------------------------------------------------------------------+
- |  [Sidebar/Tool Panel]   |  [3D Point Cloud Viewer]                |
- |                          |                                         |
- |  Project Settings       |                                         |
- |  Input File(s)          |                                         |
- |  Pipeline Controls      |                                         |
- |  Model Selection        |                                         |
- |  Output Config          |                                         |
- +-------------------------+-----------------------------------------+
- |  [Status Bar: Progress, GPU info, point count]                    |
- +------------------------------------------------------------------+
-
- 2.2 Point cloud viewer (understory/gui/viewer/point_cloud_viewer.py)
-
- LOD strategy for 500M points:
- - Level 0 (overview): ~1M points, voxel-downsampled
- - Level 1 (medium): ~5M points
- - Level 2 (close): ~20M points, region-of-interest
- - Full resolution stored in memory for processing only
- - Color modes: RGB, height gradient, classification, tree_id
-
- Interactive tools:
- - Circular plot preview (adjustable center + radius + buffer)
- - Point picking/info display
- - Section/clip planes
-
- 2.3 Branding & theme
-
+ Branding & theme
  Color palette from icon:
  - #1a4a3a dark forest (backgrounds, headers)
  - #2d7a5e medium forest (primary actions)
@@ -560,216 +448,4 @@ Phase 1: Configuration System & Core Refactoring
  - #a8d8c0 light mint (highlights, hover)
  - QSS stylesheet applying palette to all widgets
 
- 2.4 Tooltips system (understory/gui/tooltips.py)
-
- Centralized tooltip text for every parameter, derived from run.py and other_parameters.py
- inline comments.
-
- 2.5 Verification
-
- - App launches with branding, icon in taskbar
- - Can open LAS/PCD and display in viewer
- - 500M points don't crash (LOD kicks in)
- - Rotate/pan/zoom works smoothly
- - Circular plot preview renders correctly
- - Tooltips on all controls
-
- ---
- Phase 3: Pipeline Integration with GUI
-
- Goal: Run the processing pipeline from the GUI with progress, model selection, and results
- display.
-
- 3.1 Progress reporting (understory/core/progress.py)
-
- Qt Signal-based progress system. Modify each pipeline class to call progress_callback at key
- points (currently all just print()):
- - preprocessing.py:108 — "Pre-processing..."
- - inference.py:115 — batch X/Y progress
- - measure.py:820 — slice height loop
- - report_writer.py:49 — report generation
-
- 3.2 Processing panel (understory/gui/panels/processing_panel.py)
-
- - File input with drag-and-drop
- - All parameters in collapsible sections with tooltips
- - Pipeline stage checkboxes
- - Run button (executes in QThread)
- - Per-stage + overall progress bar
- - Console log output area
-
- 3.3 Model selection (understory/gui/panels/model_panel.py)
-
- - Scan /model/ for .pth files
- - Dropdown to select model
- - Import button for new models
- - Modify inference.py to accept model path from config
-
- 3.4 Output configuration (understory/gui/panels/output_panel.py)
-
- - Output directory picker
- - Checkboxes per output file type (point clouds, CSVs, visualizations, report)
-
- 3.5 Results viewer
-
- After pipeline completes:
- - Auto-load segmented cloud colored by classification
- - Tree measurements in data table
- - Stem map and histograms displayed in-app
- - CLI mode preserved: python -m understory --cli
-
- 3.6 Verification
-
- - Full pipeline runs from GUI button
- - Progress bar updates in real-time
- - Results auto-display after completion
- - All output files land in selected directory
- - Headless CLI still works
-
- ---
- Phase 4: Report Modernization
-
- Goal: Branded reports with Understory colors, project metadata, configurable content.
-
- 4.1 HTML report template
-
- Replace plain markdown generation in report_writer.py with Jinja2 HTML template:
- - Understory logo header
- - Brand color scheme
- - Project info fields (name, operator, date, notes)
- - Data tables for tree measurements
- - Embedded stem map and histograms
- - Print-friendly CSS
-
- 4.2 Enhanced visualizations
-
- - Brand colors in matplotlib plots (#4a9e7e instead of generic green)
- - Understory watermark on stem map
- - Summary statistics table
-
- 4.3 Verification
-
- - Report renders correctly in browser
- - Branding visible throughout
- - Project metadata present
- - Configurable sections include/exclude works
-
- ---
- Phase 5: Training Data Pipeline & Label Correction
-
- Goal: Guided in-app training workflow replacing the current "use CloudCompare manually"
- process.
-
- 5.1 Training panel (understory/gui/panels/training_panel.py)
-
- Guided workflow:
- 1. Import unlabeled point cloud (LAS/PCD)
- 2. Run initial segmentation (bootstrap labels with existing model)
- 3. Review & correct labels in-app
- 4. Export labeled data
- 5. Configure & run training
-
- 5.2 Label correction tool (understory/gui/viewer/label_editor.py)
-
- Extends point cloud viewer with:
- - Selection tools: box select, lasso select, sphere/brush select
- - Class painting: select points → assign class (Terrain=1, Veg=2, CWD=3, Stem=4)
- - Color by class with legend
- - Undo/redo stack
- - Keyboard shortcuts: 1-4 for class assignment
-
- 5.3 Training execution
-
- - Expose all training params from train.py (epochs, LR, batch size, device)
- - Run training in QThread with live loss/accuracy plots (replaces training_monitor.py)
- - New models auto-appear in model selection
-
- 5.4 Training tutorial (docs/training_tutorial.md)
-
- Step-by-step guide: data collection → bootstrap → correction → training → evaluation →
- inference.
-
- 5.5 Verification
-
- - Full label correction round-trip works
- - Training runs from GUI with live metrics
- - Trained model usable for inference
-
- ---
- Phase 6: Persistent Tree Numbering
-
- Goal: Consistent tree IDs across scans/runs for longitudinal comparison.
-
- 6.1 Tree registry (understory/core/tree_registry.py)
-
- - JSON registry file stores {tree_id: {x_base, y_base, dbh, scan_history}}
- - Matching algorithm: KD-tree spatial matching on tree base coordinates within configurable
- radius (default 2m), DBH similarity as tiebreaker
- - New trees get max_id + 1
- - Unmatched old trees preserved in registry
-
- 6.2 Pipeline integration
-
- After measure.py generates tree_data, before saving CSVs:
- - Load registry → match trees → assign persistent IDs → update registry
-
- 6.3 Registry viewer in GUI
-
- - Table showing all registered trees with ID, position, DBH history
- - Growth metrics across multiple scans
-
- 6.4 Verification
-
- - Process same plot twice → IDs match
- - Slightly shifted plot → IDs still match
- - New tree → gets new ID
- - Removed tree → other IDs unaffected
-
- ---
- Phase 7: Polish, Testing & Packaging
-
- - Performance profiling on 500M point clouds
- - Fix measure.py O(n^2) np.vstack() calls (use list accumulation)
- - Test suite (unit + integration)
- - Error handling: GPU OOM recovery, input validation, GUI error dialogs
- - Resume from mid-pipeline failures
- - pyproject.toml entry points
- - Desktop shortcut / packaging
-
- ---
- Phase Dependencies
-
- Phase 0 (Environment)
-     ↓
- Phase 1 (Config + Core)
-     ↓
-     ├── Phase 2 (GUI) ──→ Phase 3 (Pipeline+GUI) ──→ Phase 5 (Training)
-     ├── Phase 4 (Reports)
-     └── Phase 6 (Tree IDs)
-                     ↓
-               Phase 7 (Polish)
-
- Phases 2, 4, and 6 can run in parallel after Phase 1.
-
- Key Files to Modify
-
- ┌─────────────────────────────┬─────────────────────────────────────────────────┐
- │            File             │                     Changes                     │
- ├─────────────────────────────┼─────────────────────────────────────────────────┤
- │ scripts/tools.py            │ Fix get_fsct_path(), add PCD support            │
- ├─────────────────────────────┼─────────────────────────────────────────────────┤
- │ scripts/inference.py        │ Fix torch.load(), accept model path from config │
- ├─────────────────────────────┼─────────────────────────────────────────────────┤
- │ scripts/train.py            │ Fix torch.load(), expose progress               │
- ├─────────────────────────────┼─────────────────────────────────────────────────┤
- │ scripts/measure.py          │ Tree registry integration, progress callbacks   │
- ├─────────────────────────────┼─────────────────────────────────────────────────┤
- │ scripts/report_writer.py    │ Brand colors, template system                   │
- ├─────────────────────────────┼─────────────────────────────────────────────────┤
- │ scripts/other_parameters.py │ Migrate to config dataclasses                   │
- ├─────────────────────────────┼─────────────────────────────────────────────────┤
- │ scripts/run.py              │ New entry point via __main__.py                 │
- ├─────────────────────────────┼─────────────────────────────────────────────────┤
- │ requirements.txt            │ Complete rewrite                                │
-
-
+ 
