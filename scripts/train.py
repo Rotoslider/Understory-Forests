@@ -313,8 +313,8 @@ class TrainModel:
             i = 0
             vis_parts = []
             for data in self.train_loader:
-                data.pos = data.pos.to(self.device)
-                data.y = torch.unsqueeze(data.y, 0).to(self.device)
+                data = data.to(self.device)
+                data.y = torch.unsqueeze(data.y, 0)
                 outputs = model(data)
                 loss = criterion(outputs, data.y)
 
@@ -360,8 +360,8 @@ class TrainModel:
                 running_acc = 0
                 i = 0
                 for data in self.validation_loader:
-                    data.pos = data.pos.to(self.device)
-                    data.y = torch.unsqueeze(data.y, 0).to(self.device)
+                    data = data.to(self.device)
+                    data.y = torch.unsqueeze(data.y, 0)
 
                     outputs = model(data)
                     loss = criterion(outputs, data.y)
