@@ -5,7 +5,6 @@ set -euo pipefail
 
 VENV_DIR="venv"
 TORCH_INDEX="https://download.pytorch.org/whl/cu128"
-PYG_FIND_LINKS="https://data.pyg.org/whl/torch-2.10.0+cu128.html"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -133,15 +132,67 @@ info "Installing Understory (editable mode) …"
 pip install -e .
 
 # ── 8. Install PyTorch Geometric extensions ─────────────────────────
-if python -c "import torch_scatter" &>/dev/null; then
+# PyG extensions (torch-scatter, torch-cluster, etc.) need pre-built wheels
+# that match the exact PyTorch+CUDA version. Wheels are hosted at data.pyg.org
+# but often lag behind the latest PyTorch releases.
+
+# Detect installed torch version to construct the correct wheel URL
+TORCH_SHORT=$(python -c "import torch; print(torch.__version__.split('+')[0])")
+CUDA_TAG=$(python -c "import torch; v=torch.version.cuda; print('+cu'+v.replace('.','') if v else '+cpu')")
+PYG_FIND_LINKS="https://data.pyg.org/whl/torch-${TORCH_SHORT}${CUDA_TAG}.html"
+
+_install_pyg_extensions() {
+    # Check if pre-built wheels exist for this torch version
+    if curl -sf "$PYG_FIND_LINKS" -o /dev/null 2>&1; then
+        info "Pre-built PyG wheels available for torch ${TORCH_SHORT}${CUDA_TAG}"
+        pip install torch-scatter torch-sparse torch-cluster torch-spline-conv \
+            -f "$PYG_FIND_LINKS"
+    else
+        warn "No pre-built PyG wheels for torch ${TORCH_SHORT}${CUDA_TAG} — building from source."
+        # Building CUDA extensions from source requires nvcc (CUDA compiler)
+        if ! command -v nvcc &>/dev/null; then
+            info "Installing nvidia-cuda-toolkit (needed to compile CUDA extensions) …"
+            sudo apt-get update -qq
+            sudo apt-get install -y nvidia-cuda-toolkit
+        fi
+        pip install torch-scatter torch-sparse torch-cluster torch-spline-conv \
+            --no-build-isolation
+    fi
+}
+
+if python -c "import torch_cluster" &>/dev/null; then
     info "PyG extensions already installed — skipping."
 else
     info "Installing PyTorch Geometric extensions …"
-    pip install torch-scatter torch-sparse torch-cluster torch-spline-conv \
-        -f "$PYG_FIND_LINKS" --no-build-isolation
+    _install_pyg_extensions
 fi
 
-# ── 9. Verify installation ──────────────────────────────────────────
+# ── 9. Verify CUDA support in PyG extensions ─────────────────────────
+if command -v nvidia-smi &>/dev/null; then
+    info "Verifying CUDA support in PyG extensions …"
+    if python -c "
+import torch, torch_cluster
+# Test farthest-point-sampling on GPU (used by the PointNet++ model)
+pos = torch.randn(16, 3, device='cuda')
+batch = torch.zeros(16, dtype=torch.long, device='cuda')
+torch_cluster.fps(pos, batch, ratio=0.5)
+" 2>/dev/null; then
+        info "PyG CUDA support: OK"
+    else
+        echo ""
+        warn "PyG extensions were installed WITHOUT CUDA support!"
+        warn "GPU inference will fail. To fix, run:"
+        echo ""
+        echo "    source $VENV_DIR/bin/activate"
+        echo "    pip uninstall -y torch-scatter torch-sparse torch-cluster torch-spline-conv"
+        echo "    sudo apt install nvidia-cuda-toolkit"
+        echo "    pip install torch-scatter torch-sparse torch-cluster torch-spline-conv --no-build-isolation"
+        echo ""
+        warn "Alternatively, switch to CPU mode in Process settings (slower but works)."
+    fi
+fi
+
+# ── 10. Verify installation ──────────────────────────────────────────
 info "Verifying installation …"
 python -c "
 import torch

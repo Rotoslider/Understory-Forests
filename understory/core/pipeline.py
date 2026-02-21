@@ -42,6 +42,15 @@ _ERROR_TRANSLATIONS = [
         "or enable 'CPU only' mode.",
     ),
     (
+        ("Not compiled with CUDA support",),
+        "PyG extensions (torch-scatter/cluster) were installed without CUDA. "
+        "Fix by running:\n"
+        "  pip uninstall -y torch-scatter torch-sparse torch-cluster torch-spline-conv\n"
+        "  sudo apt install nvidia-cuda-toolkit\n"
+        "  pip install torch-scatter torch-sparse torch-cluster torch-spline-conv --no-build-isolation\n"
+        "Or switch to CPU mode in Process settings.",
+    ),
+    (
         ("CUDA error",),
         "A GPU error occurred. Try reducing batch size or switching to CPU mode.",
     ),
