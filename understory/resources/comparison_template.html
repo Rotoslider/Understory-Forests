@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Understory — Run Comparison Report</title>
+    <style>
+        :root {
+            --dark-forest: #1a4a3a;
+            --medium-forest: #2d7a5e;
+            --medium-green: #4a9e7e;
+            --light-mint: #a8d8c0;
+            --pale-mint: #f0f7f4;
+            --white: #ffffff;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+            color: #2c3e3a;
+            background: var(--white);
+            line-height: 1.6;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, var(--dark-forest), var(--medium-forest));
+            color: var(--white);
+            padding: 32px 48px;
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        .header img {
+            height: 64px;
+            width: auto;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 300;
+            letter-spacing: 1px;
+        }
+
+        .header .subtitle {
+            font-size: 14px;
+            color: var(--light-mint);
+            margin-top: 4px;
+        }
+
+        /* Project info bar */
+        .project-info {
+            background: var(--pale-mint);
+            padding: 16px 48px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            border-bottom: 2px solid var(--light-mint);
+        }
+
+        .project-info .field {
+            font-size: 13px;
+        }
+
+        .project-info .field-label {
+            font-weight: 600;
+            color: var(--dark-forest);
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.5px;
+        }
+
+        .project-info .field-value {
+            word-break: break-all;
+        }
+
+        /* Main content */
+        .content {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 32px 48px;
+        }
+
+        h2 {
+            color: var(--dark-forest);
+            font-size: 20px;
+            margin: 32px 0 16px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--light-mint);
+        }
+
+        h2:first-child { margin-top: 0; }
+
+        /* Summary stats cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin: 16px 0;
+        }
+
+        .stat-card {
+            background: var(--pale-mint);
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+            border-left: 4px solid var(--medium-green);
+        }
+
+        .stat-card .value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--dark-forest);
+        }
+
+        .stat-card .label {
+            font-size: 12px;
+            color: var(--medium-forest);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 4px;
+        }
+
+        .stat-card.positive { border-left-color: var(--medium-green); }
+        .stat-card.negative { border-left-color: #c0392b; }
+        .stat-card.neutral  { border-left-color: var(--light-mint); }
+        .stat-card.new      { border-left-color: #2980b9; }
+        .stat-card.removed  { border-left-color: #e67e22; }
+
+        /* Delta cards: tighter layout for change statistics */
+        .delta-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px;
+            margin: 16px 0;
+        }
+
+        .delta-card {
+            background: var(--pale-mint);
+            border-radius: 8px;
+            padding: 12px 14px;
+            text-align: center;
+            border-left: 4px solid var(--medium-green);
+        }
+
+        .delta-card .metric-name {
+            font-size: 11px;
+            color: var(--medium-forest);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            margin-bottom: 4px;
+        }
+
+        .delta-card .value {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--dark-forest);
+        }
+
+        .delta-card .sub-label {
+            font-size: 10px;
+            color: #7f8c8d;
+            margin-top: 2px;
+        }
+
+        /* Data table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            font-size: 13px;
+        }
+
+        thead th {
+            background: var(--dark-forest);
+            color: var(--white);
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        tbody td {
+            padding: 8px 12px;
+            border-bottom: 1px solid #e0ebe5;
+        }
+
+        tbody tr:nth-child(even) {
+            background: var(--pale-mint);
+        }
+
+        tbody tr:hover {
+            background: var(--light-mint);
+        }
+
+        td.positive { color: var(--medium-forest); font-weight: 600; }
+        td.negative { color: #c0392b; font-weight: 600; }
+
+        /* Tag badges for new/removed trees */
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .tag-new {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .tag-removed {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        /* Images / figures */
+        .figure {
+            margin: 24px 0;
+            text-align: center;
+        }
+
+        .figure img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+        }
+
+        .figure .caption {
+            font-size: 12px;
+            color: var(--medium-forest);
+            margin-top: 8px;
+            font-style: italic;
+        }
+
+        .histogram-row {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 24px;
+            margin: 16px 0;
+        }
+
+        /* Section description */
+        .section-desc {
+            color: #5a6e66;
+            font-size: 14px;
+            margin-bottom: 12px;
+        }
+
+        /* Footer */
+        .footer {
+            background: var(--dark-forest);
+            color: var(--light-mint);
+            text-align: center;
+            padding: 16px;
+            font-size: 12px;
+            margin-top: 48px;
+        }
+
+        /* Print styles */
+        @media print {
+            .header { padding: 16px 24px; }
+            .content { padding: 16px 24px; }
+            .figure img { max-width: 90%; }
+            .stat-card, .delta-card { break-inside: avoid; }
+            table { font-size: 11px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    {% if logo_uri %}
+    <img src="{{ logo_uri }}" alt="Understory">
+    {% endif %}
+    <div>
+        <h1>Run Comparison Report</h1>
+        <div class="subtitle">Generated by Understory — Forest Structural Complexity Tool</div>
+    </div>
+</div>
+
+<div class="project-info">
+    <div class="field">
+        <div class="field-label">Run A (Baseline)</div>
+        <div class="field-value">{{ run_a_label }}</div>
+    </div>
+    <div class="field">
+        <div class="field-label">Run A Date</div>
+        {{ run_a_date }}
+    </div>
+    <div class="field">
+        <div class="field-label">Run B (Comparison)</div>
+        <div class="field-value">{{ run_b_label }}</div>
+    </div>
+    <div class="field">
+        <div class="field-label">Run B Date</div>
+        {{ run_b_date }}
+    </div>
+    <div class="field">
+        <div class="field-label">Report Generated</div>
+        {{ report_date }}
+    </div>
+</div>
+
+<div class="content">
+
+    <!-- ===== SUMMARY ===== -->
+    <h2>Summary</h2>
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="value">{{ trees_a_count }}</div>
+            <div class="label">Trees in Run A</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ trees_b_count }}</div>
+            <div class="label">Trees in Run B</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ matched_count }}</div>
+            <div class="label">Matched Trees</div>
+        </div>
+        <div class="stat-card new">
+            <div class="value">{{ new_count }}</div>
+            <div class="label">New Trees (B only)</div>
+        </div>
+        <div class="stat-card removed">
+            <div class="value">{{ removed_count }}</div>
+            <div class="label">Removed Trees (A only)</div>
+        </div>
+    </div>
+
+    {% if matched_count > 0 %}
+    <!-- ===== CHANGE STATISTICS ===== -->
+    <h2>Change Statistics</h2>
+    <p class="section-desc">Mean, median, and standard deviation of per-tree deltas for matched trees (Run B &minus; Run A).</p>
+
+    <h3 style="color: var(--dark-forest); font-size: 15px; margin: 20px 0 8px;">DBH Changes (m)</h3>
+    <div class="delta-grid">
+        <div class="delta-card">
+            <div class="metric-name">Mean Delta</div>
+            <div class="value">{{ "%+.4f"|format(dbh_stats.mean) }}</div>
+        </div>
+        <div class="delta-card">
+            <div class="metric-name">Median Delta</div>
+            <div class="value">{{ "%+.4f"|format(dbh_stats.median) }}</div>
+        </div>
+        <div class="delta-card">
+            <div class="metric-name">Std Dev</div>
+            <div class="value">{{ "%.4f"|format(dbh_stats.std) }}</div>
+        </div>
+        <div class="delta-card">
+            <div class="metric-name">Min</div>
+            <div class="value">{{ "%+.4f"|format(dbh_stats.min) }}</div>
+        </div>
+        <div class="delta-card">
+            <div class="metric-name">Max</div>
+            <div class="value">{{ "%+.4f"|format(dbh_stats.max) }}</div>
+        </div>
+    </div>
+
+    <h3 style="color: var(--dark-forest); font-size: 15px; margin: 20px 0 8px;">Height Changes (m)</h3>
+    <div class="delta-grid">
+        <div class="delta-card">
+            <div class="metric-name">Mean Delta</div>
+            <div class="value">{{ "%+.2f"|format(height_stats.mean) }}</div>
+        </div>
+        <div class="delta-card">
+            <div class="metric-name">Median Delta</div>
+            <div class="value">{{ "%+.2f"|format(height_stats.median) }}</div>
+        </div>
+        <div class="delta-card">
+            <div class="metric-name">Std Dev</div>
+            <div class="value">{{ "%.2f"|format(height_stats.std) }}</div>
+        </div>
+        <div class="delta-card">
+            <div class="metric-name">Min</div>
+            <div class="value">{{ "%+.2f"|format(height_stats.min) }}</div>
+        </div>
+        <div class="delta-card">
+            <div class="metric-name">Max</div>
+            <div class="value">{{ "%+.2f"|format(height_stats.max) }}</div>
+        </div>
+    </div>
+
+    <h3 style="color: var(--dark-forest); font-size: 15px; margin: 20px 0 8px;">Volume Changes (m&sup3;)</h3>
+    <div class="delta-grid">
+        <div class="delta-card">
+            <div class="metric-name">Mean Delta</div>
+            <div class="value">{{ "%+.3f"|format(volume_stats.mean) }}</div>
+        </div>
+        <div class="delta-card">
+            <div class="metric-name">Median Delta</div>
+            <div class="value">{{ "%+.3f"|format(volume_stats.median) }}</div>
+        </div>
+        <div class="delta-card">
+            <div class="metric-name">Std Dev</div>
+            <div class="value">{{ "%.3f"|format(volume_stats.std) }}</div>
+        </div>
+        <div class="delta-card">
+            <div class="metric-name">Min</div>
+            <div class="value">{{ "%+.3f"|format(volume_stats.min) }}</div>
+        </div>
+        <div class="delta-card">
+            <div class="metric-name">Max</div>
+            <div class="value">{{ "%+.3f"|format(volume_stats.max) }}</div>
+        </div>
+    </div>
+
+    <!-- ===== TREE CHANGES TABLE ===== -->
+    <h2>Tree Changes</h2>
+    <p class="section-desc">Per-tree comparison for all matched trees. Deltas are computed as Run B &minus; Run A.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Tree ID</th>
+                <th>DBH A (m)</th>
+                <th>DBH B (m)</th>
+                <th>DBH Delta</th>
+                <th>Height A (m)</th>
+                <th>Height B (m)</th>
+                <th>Height Delta</th>
+                <th>Volume A (m&sup3;)</th>
+                <th>Volume B (m&sup3;)</th>
+                <th>Volume Delta</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for tree in matched %}
+            <tr>
+                <td>{{ tree.TreeId }}</td>
+                <td>{{ "%.3f"|format(tree.DBH_A) }}</td>
+                <td>{{ "%.3f"|format(tree.DBH_B) }}</td>
+                <td class="{{ 'positive' if tree.DBH_delta > 0 else ('negative' if tree.DBH_delta < 0 else '') }}">
+                    {{ "%+.4f"|format(tree.DBH_delta) }}
+                    <br><small>({{ "%+.1f"|format(tree.DBH_pct) }}%)</small>
+                </td>
+                <td>{{ "%.2f"|format(tree.Height_A) }}</td>
+                <td>{{ "%.2f"|format(tree.Height_B) }}</td>
+                <td class="{{ 'positive' if tree.Height_delta > 0 else ('negative' if tree.Height_delta < 0 else '') }}">
+                    {{ "%+.2f"|format(tree.Height_delta) }}
+                    <br><small>({{ "%+.1f"|format(tree.Height_pct) }}%)</small>
+                </td>
+                <td>{{ "%.3f"|format(tree.Volume_A) }}</td>
+                <td>{{ "%.3f"|format(tree.Volume_B) }}</td>
+                <td class="{{ 'positive' if tree.Volume_delta > 0 else ('negative' if tree.Volume_delta < 0 else '') }}">
+                    {{ "%+.3f"|format(tree.Volume_delta) }}
+                    <br><small>({{ "%+.1f"|format(tree.Volume_pct) }}%)</small>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    {% if new_trees|length > 0 %}
+    <!-- ===== NEW TREES ===== -->
+    <h2>New Trees <span class="tag tag-new">{{ new_trees|length }} new</span></h2>
+    <p class="section-desc">Trees detected in Run B that were not present in Run A.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Tree ID</th>
+                <th>DBH (m)</th>
+                <th>Height (m)</th>
+                <th>Volume (m&sup3;)</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for tree in new_trees %}
+            <tr>
+                <td>{{ tree.TreeId }}</td>
+                <td>{{ "%.3f"|format(tree.DBH) }}</td>
+                <td>{{ "%.2f"|format(tree.Height) }}</td>
+                <td>{{ "%.3f"|format(tree.Volume) }}</td>
+                <td><span class="tag tag-new">New</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    {% if removed_trees|length > 0 %}
+    <!-- ===== REMOVED TREES ===== -->
+    <h2>Removed Trees <span class="tag tag-removed">{{ removed_trees|length }} removed</span></h2>
+    <p class="section-desc">Trees present in Run A that were not detected in Run B.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Tree ID</th>
+                <th>DBH (m)</th>
+                <th>Height (m)</th>
+                <th>Volume (m&sup3;)</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for tree in removed_trees %}
+            <tr>
+                <td>{{ tree.TreeId }}</td>
+                <td>{{ "%.3f"|format(tree.DBH) }}</td>
+                <td>{{ "%.2f"|format(tree.Height) }}</td>
+                <td>{{ "%.3f"|format(tree.Volume) }}</td>
+                <td><span class="tag tag-removed">Removed</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    {% if dbh_hist_uri or height_hist_uri or volume_hist_uri %}
+    <!-- ===== DELTA HISTOGRAMS ===== -->
+    <h2>Delta Histograms</h2>
+    <p class="section-desc">Distribution of per-tree changes between the two runs. Positive values indicate growth or increase; negative values indicate shrinkage or decrease.</p>
+    <div class="histogram-row">
+        {% if dbh_hist_uri %}
+        <div class="figure">
+            <img src="{{ dbh_hist_uri }}" alt="DBH Change Distribution">
+            <div class="caption">DBH change distribution across matched trees.</div>
+        </div>
+        {% endif %}
+        {% if height_hist_uri %}
+        <div class="figure">
+            <img src="{{ height_hist_uri }}" alt="Height Change Distribution">
+            <div class="caption">Height change distribution across matched trees.</div>
+        </div>
+        {% endif %}
+        {% if volume_hist_uri %}
+        <div class="figure">
+            <img src="{{ volume_hist_uri }}" alt="Volume Change Distribution">
+            <div class="caption">Volume change distribution across matched trees.</div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+</div>
+
+<div class="footer">
+    Generated by Understory — Forest Structural Complexity Tool &bull; {{ report_date }}
+</div>
+
+</body>
+</html>

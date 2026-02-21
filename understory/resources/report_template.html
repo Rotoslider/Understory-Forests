@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Understory — Plot Report</title>
+    <style>
+        :root {
+            --dark-forest: #1a4a3a;
+            --medium-forest: #2d7a5e;
+            --medium-green: #4a9e7e;
+            --light-mint: #a8d8c0;
+            --pale-mint: #f0f7f4;
+            --white: #ffffff;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+            color: #2c3e3a;
+            background: var(--white);
+            line-height: 1.6;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, var(--dark-forest), var(--medium-forest));
+            color: var(--white);
+            padding: 32px 48px;
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        .header img {
+            height: 64px;
+            width: auto;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 300;
+            letter-spacing: 1px;
+        }
+
+        .header .subtitle {
+            font-size: 14px;
+            color: var(--light-mint);
+            margin-top: 4px;
+        }
+
+        /* Project info bar */
+        .project-info {
+            background: var(--pale-mint);
+            padding: 16px 48px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            border-bottom: 2px solid var(--light-mint);
+        }
+
+        .project-info .field {
+            font-size: 13px;
+        }
+
+        .project-info .field-label {
+            font-weight: 600;
+            color: var(--dark-forest);
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.5px;
+        }
+
+        /* Main content */
+        .content {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 32px 48px;
+        }
+
+        h2 {
+            color: var(--dark-forest);
+            font-size: 20px;
+            margin: 32px 0 16px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--light-mint);
+        }
+
+        h2:first-child { margin-top: 0; }
+
+        /* Summary stats cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin: 16px 0;
+        }
+
+        .stat-card {
+            background: var(--pale-mint);
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+            border-left: 4px solid var(--medium-green);
+        }
+
+        .stat-card .value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--dark-forest);
+        }
+
+        .stat-card .label {
+            font-size: 12px;
+            color: var(--medium-forest);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 4px;
+        }
+
+        /* Data table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            font-size: 13px;
+        }
+
+        thead th {
+            background: var(--dark-forest);
+            color: var(--white);
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        tbody td {
+            padding: 8px 12px;
+            border-bottom: 1px solid #e0ebe5;
+        }
+
+        tbody tr:nth-child(even) {
+            background: var(--pale-mint);
+        }
+
+        tbody tr:hover {
+            background: var(--light-mint);
+        }
+
+        /* Images */
+        .figure {
+            margin: 24px 0;
+            text-align: center;
+        }
+
+        .figure img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+        }
+
+        .figure .caption {
+            font-size: 12px;
+            color: var(--medium-forest);
+            margin-top: 8px;
+            font-style: italic;
+        }
+
+        /* Timing info */
+        .timing {
+            background: var(--pale-mint);
+            border-radius: 8px;
+            padding: 16px 24px;
+            margin: 16px 0;
+            font-size: 13px;
+        }
+
+        .timing table {
+            margin: 0;
+        }
+
+        /* Footer */
+        .footer {
+            background: var(--dark-forest);
+            color: var(--light-mint);
+            text-align: center;
+            padding: 16px;
+            font-size: 12px;
+            margin-top: 48px;
+        }
+
+        /* Photo grid */
+        .photo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+            margin: 16px 0;
+        }
+
+        .photo-grid img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        /* Print styles */
+        @media print {
+            .header { padding: 16px 24px; }
+            .content { padding: 16px 24px; }
+            .figure img { max-width: 90%; }
+            .stat-card { break-inside: avoid; }
+            table { font-size: 11px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    {% if logo_path %}
+    <img src="{{ logo_path }}" alt="Understory">
+    {% endif %}
+    <div>
+        <h1>Plot Report</h1>
+        <div class="subtitle">Generated by Understory — Forest Structural Complexity Tool</div>
+    </div>
+</div>
+
+<div class="project-info">
+    <div class="field">
+        <div class="field-label">Point Cloud</div>
+        {{ filename }}
+    </div>
+    {% if project_name %}
+    <div class="field">
+        <div class="field-label">Project</div>
+        {{ project_name }}
+    </div>
+    {% endif %}
+    {% if operator %}
+    <div class="field">
+        <div class="field-label">Operator</div>
+        {{ operator }}
+    </div>
+    {% endif %}
+    <div class="field">
+        <div class="field-label">Date</div>
+        {{ date }}
+    </div>
+    <div class="field">
+        <div class="field-label">Plot Centre</div>
+        X: {{ "%.2f"|format(plot_centre_x) }} m, Y: {{ "%.2f"|format(plot_centre_y) }} m
+    </div>
+    {% if plot_radius > 0 %}
+    <div class="field">
+        <div class="field-label">Plot Radius</div>
+        {{ plot_radius }} m (buffer: {{ plot_radius_buffer }} m)
+    </div>
+    {% endif %}
+    <div class="field">
+        <div class="field-label">Plot Area</div>
+        {{ "%.3f"|format(plot_area) }} ha
+    </div>
+</div>
+
+<div class="content">
+
+    {% if num_trees > 0 %}
+    <h2>Summary Statistics</h2>
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="value">{{ num_trees }}</div>
+            <div class="label">Trees</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ stems_per_ha }}</div>
+            <div class="label">Stems/ha</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "%.3f"|format(mean_dbh) }}</div>
+            <div class="label">Mean DBH (m)</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "%.1f"|format(mean_height) }}</div>
+            <div class="label">Mean Height (m)</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "%.1f"|format(canopy_cover * 100) }}%</div>
+            <div class="label">Canopy Cover</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "%.2f"|format(total_volume) }}</div>
+            <div class="label">Total Volume (m&sup3;)</div>
+        </div>
+    </div>
+
+    {% if num_trees > 0 and basal_area_ha is defined %}
+    <h2>Stand Metrics</h2>
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="value">{{ "%.2f"|format(basal_area_ha) }}</div>
+            <div class="label">Basal Area (m&sup2;/ha)</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "%.3f"|format(qmd) }}</div>
+            <div class="label">QMD (m)</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "%.1f"|format(loreys_height) }}</div>
+            <div class="label">Lorey's Height (m)</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "%.0f"|format(sdi) }}</div>
+            <div class="label">Stand Density Index</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <h2>Tree Measurements</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Tree ID</th>
+                <th>DBH (m)</th>
+                <th>Height (m)</th>
+                <th>Volume 1 (m&sup3;)</th>
+                <th>Volume 2 (m&sup3;)</th>
+                <th>CCI at BH</th>
+                <th>X Base</th>
+                <th>Y Base</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for tree in trees %}
+            <tr>
+                <td>{{ tree.TreeId }}</td>
+                <td>{{ "%.3f"|format(tree.DBH) }}</td>
+                <td>{{ "%.2f"|format(tree.Height) }}</td>
+                <td>{{ "%.3f"|format(tree.Volume_1) }}</td>
+                <td>{{ "%.3f"|format(tree.Volume_2) }}</td>
+                <td>{{ "%.2f"|format(tree.CCI_at_BH) }}</td>
+                <td>{{ "%.2f"|format(tree.x_tree_base) }}</td>
+                <td>{{ "%.2f"|format(tree.y_tree_base) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <h2>DBH Distribution</h2>
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="value">{{ "%.3f"|format(min_dbh) }}</div>
+            <div class="label">Min DBH (m)</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "%.3f"|format(median_dbh) }}</div>
+            <div class="label">Median DBH (m)</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "%.3f"|format(max_dbh) }}</div>
+            <div class="label">Max DBH (m)</div>
+        </div>
+    </div>
+    {% else %}
+    <h2>Summary</h2>
+    <p>No trees were detected in this plot.</p>
+    {% endif %}
+
+    {% if num_points_original > 0 %}
+    <h2>Point Cloud Statistics</h2>
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="value">{{ "{:,}".format(num_points_original) }}</div>
+            <div class="label">Original Points</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "{:,}".format(num_points_trimmed) }}</div>
+            <div class="label">Trimmed Points</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "{:,}".format(num_points_subsampled) }}</div>
+            <div class="label">Subsampled Points</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "{:,}".format(num_terrain_points) }}</div>
+            <div class="label">Terrain Points</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "{:,}".format(num_vegetation_points) }}</div>
+            <div class="label">Vegetation Points</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "{:,}".format(num_cwd_points) }}</div>
+            <div class="label">CWD Points</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "{:,}".format(num_stem_points) }}</div>
+            <div class="label">Stem Points</div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if understory_veg_coverage > 0 or cwd_coverage > 0 or avg_gradient > 0 %}
+    <h2>Coverage &amp; Terrain</h2>
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="value">{{ "%.1f"|format(understory_veg_coverage * 100) }}%</div>
+            <div class="label">Understory Veg Coverage</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "%.1f"|format(cwd_coverage * 100) }}%</div>
+            <div class="label">CWD Coverage</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ "%.1f"|format(avg_gradient) }}&deg;</div>
+            <div class="label">Avg Gradient</div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if show_stem_map %}
+    <h2>Stem Map</h2>
+    <div class="figure">
+        <img src="Stem_Map.png" alt="Stem Map">
+        <div class="caption">Stem map showing tree positions, contours, understory vegetation, and coarse woody debris.</div>
+    </div>
+    {% endif %}
+
+    {% if has_taper is defined and has_taper %}
+    <h2>Taper Profiles</h2>
+    <div class="figure">
+        <img src="Taper_Profiles.png" alt="Taper Profiles">
+        <div class="caption">Taper profiles showing diameter at various heights for each measured tree.</div>
+    </div>
+    {% endif %}
+
+    {% if has_crown_map is defined and has_crown_map %}
+    <h2>Crown Projection Map</h2>
+    <div class="figure">
+        <img src="Crown_Projection_Map.png" alt="Crown Projection Map">
+        <div class="caption">Crown projection map showing estimated canopy coverage, stem positions, and tree IDs.</div>
+    </div>
+    {% endif %}
+
+    {% if show_histograms and num_trees > 0 %}
+    <h2>Distributions</h2>
+    <div class="figure">
+        <img src="Diameter at Breast Height Distribution.png" alt="DBH Distribution">
+        <div class="caption">Diameter at Breast Height distribution.</div>
+    </div>
+    <div class="figure">
+        <img src="Tree Height Distribution.png" alt="Height Distribution">
+        <div class="caption">Tree height distribution.</div>
+    </div>
+    <div class="figure">
+        <img src="Tree Volume 1 Distribution.png" alt="Volume 1 Distribution">
+        <div class="caption">Tree volume (cylinder model) distribution.</div>
+    </div>
+    <div class="figure">
+        <img src="Tree Volume 2 Distribution.png" alt="Volume 2 Distribution">
+        <div class="caption">Tree volume (cone model) distribution.</div>
+    </div>
+    {% endif %}
+
+    {% if photos and photos|length > 0 %}
+    <h2>Field Photos</h2>
+    <div class="photo-grid">
+        {% for photo in photos %}
+        <img src="{{ photo }}" alt="Field photo">
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <h2>Processing Details</h2>
+    <div class="timing">
+        <table>
+            <tbody>
+                <tr><td><strong>Preprocessing</strong></td><td>{{ "%d min %d s"|format(preprocessing_time // 60, preprocessing_time % 60) }}</td></tr>
+                <tr><td><strong>Semantic Segmentation</strong></td><td>{{ "%d min %d s"|format(segmentation_time // 60, segmentation_time % 60) }}</td></tr>
+                <tr><td><strong>Post-processing</strong></td><td>{{ "%d min %d s"|format(postprocessing_time // 60, postprocessing_time % 60) }}</td></tr>
+                <tr><td><strong>Measurement</strong></td><td>{{ "%d min %d s"|format(measurement_time // 60, measurement_time % 60) }}</td></tr>
+                <tr><td><strong>Total</strong></td><td>{{ "%.1f"|format(total_time / 60) }} min</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    {% if notes %}
+    <h2>Notes</h2>
+    <p>{{ notes }}</p>
+    {% endif %}
+
+</div>
+
+<div class="footer">
+    Generated by Understory — Forest Structural Complexity Tool &bull; {{ date }}
+</div>
+
+</body>
+</html>
