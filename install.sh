@@ -16,7 +16,57 @@ info()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 
-# ── 1. Check Python ─────────────────────────────────────────────────
+# ── Parse flags ───────────────────────────────────────────────────────
+CLEAN=false
+for arg in "$@"; do
+    case "$arg" in
+        --clean) CLEAN=true ;;
+        --help|-h)
+            echo "Usage: ./install.sh [--clean]"
+            echo "  --clean   Remove existing venv and start fresh"
+            exit 0
+            ;;
+        *) error "Unknown option: $arg" ;;
+    esac
+done
+
+# ── 1. Check / install system dependencies ────────────────────────────
+info "Checking system dependencies …"
+
+MISSING_PKGS=()
+
+# Python venv support (e.g. python3.12-venv)
+PY_VER=$( (python3.12 --version 2>/dev/null || python3.11 --version 2>/dev/null || python3.10 --version 2>/dev/null || python3 --version 2>/dev/null) | grep -oP '\d+\.\d+' | head -1)
+if [[ -n "$PY_VER" ]]; then
+    VENV_PKG="python${PY_VER}-venv"
+    if ! dpkg -s "$VENV_PKG" &>/dev/null; then
+        MISSING_PKGS+=("$VENV_PKG")
+    fi
+fi
+
+# Build tools (needed for compiled extensions like open3d, hdbscan, etc.)
+for pkg in build-essential python3-dev; do
+    if ! dpkg -s "$pkg" &>/dev/null; then
+        MISSING_PKGS+=("$pkg")
+    fi
+done
+
+# X11 / OpenGL libraries needed by PySide6 and VTK
+for pkg in libgl1 libegl1 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-xinerama0; do
+    if ! dpkg -s "$pkg" &>/dev/null; then
+        MISSING_PKGS+=("$pkg")
+    fi
+done
+
+if [[ ${#MISSING_PKGS[@]} -gt 0 ]]; then
+    info "Installing missing system packages: ${MISSING_PKGS[*]}"
+    sudo apt-get update -qq
+    sudo apt-get install -y "${MISSING_PKGS[@]}"
+else
+    info "All system dependencies are present."
+fi
+
+# ── 2. Check Python ──────────────────────────────────────────────────
 PYTHON=""
 for candidate in python3.12 python3.11 python3.10 python3; do
     if command -v "$candidate" &>/dev/null; then
@@ -32,7 +82,7 @@ done
 [[ -z "$PYTHON" ]] && error "Python 3.10 – 3.12 is required but not found on PATH."
 info "Using $PYTHON ($($PYTHON --version))"
 
-# ── 2. Check NVIDIA driver ──────────────────────────────────────────
+# ── 3. Check NVIDIA driver ──────────────────────────────────────────
 if command -v nvidia-smi &>/dev/null; then
     DRIVER_VER=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
     info "NVIDIA driver $DRIVER_VER detected"
@@ -41,9 +91,21 @@ else
     warn "Install the NVIDIA driver (570+) and CUDA toolkit 12.8 for GPU support."
 fi
 
-# ── 3. Create virtual environment ───────────────────────────────────
+# ── 4. Create virtual environment ───────────────────────────────────
+if [[ "$CLEAN" == true && -d "$VENV_DIR" ]]; then
+    info "Removing existing virtual environment (--clean) …"
+    rm -rf "$VENV_DIR"
+fi
+
 if [[ -d "$VENV_DIR" ]]; then
-    info "Virtual environment already exists at $VENV_DIR — reusing."
+    # Verify the existing venv is functional
+    if "$VENV_DIR/bin/python" -c "import pip" &>/dev/null; then
+        info "Virtual environment already exists at $VENV_DIR — reusing."
+    else
+        warn "Existing virtual environment is broken — recreating …"
+        rm -rf "$VENV_DIR"
+        "$PYTHON" -m venv "$VENV_DIR"
+    fi
 else
     info "Creating virtual environment …"
     "$PYTHON" -m venv "$VENV_DIR"
@@ -53,11 +115,11 @@ fi
 source "$VENV_DIR/bin/activate"
 info "Activated venv ($VENV_DIR)"
 
-# ── 4. Upgrade pip ──────────────────────────────────────────────────
+# ── 5. Upgrade pip ──────────────────────────────────────────────────
 info "Upgrading pip …"
 pip install --upgrade pip --quiet
 
-# ── 5. Install PyTorch with CUDA 12.8 ──────────────────────────────
+# ── 6. Install PyTorch with CUDA 12.8 ──────────────────────────────
 if python -c "import torch" &>/dev/null; then
     TORCH_VER=$(python -c "import torch; print(torch.__version__)")
     info "PyTorch $TORCH_VER is already installed — skipping."
@@ -66,11 +128,11 @@ else
     pip install torch torchvision torchaudio --index-url "$TORCH_INDEX"
 fi
 
-# ── 6. Install Understory in editable mode ──────────────────────────
+# ── 7. Install Understory in editable mode ──────────────────────────
 info "Installing Understory (editable mode) …"
 pip install -e .
 
-# ── 7. Install PyTorch Geometric extensions ─────────────────────────
+# ── 8. Install PyTorch Geometric extensions ─────────────────────────
 if python -c "import torch_scatter" &>/dev/null; then
     info "PyG extensions already installed — skipping."
 else
@@ -79,7 +141,7 @@ else
         -f "$PYG_FIND_LINKS" --no-build-isolation
 fi
 
-# ── 8. Verify installation ──────────────────────────────────────────
+# ── 9. Verify installation ──────────────────────────────────────────
 info "Verifying installation …"
 python -c "
 import torch

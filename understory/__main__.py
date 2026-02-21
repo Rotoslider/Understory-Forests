@@ -106,12 +106,19 @@ def _cli_progress(stage: str, fraction: float) -> None:
 
 def _run_gui() -> None:
     """Launch the PySide6 GUI application."""
+    import os
+
     # Suppress PyVista deprecation warning about orig_extract_id renaming
     import warnings
     warnings.filterwarnings("ignore", message=".*orig_extract_id.*")
 
+    # Force X11 backend — VTK's render window doesn't work under Wayland
+    if "QT_QPA_PLATFORM" not in os.environ:
+        os.environ["QT_QPA_PLATFORM"] = "xcb"
+
     try:
         from PySide6.QtWidgets import QApplication
+        from PySide6.QtCore import QTimer
         from understory.gui.main_window import MainWindow
     except ImportError as e:
         print(f"GUI dependencies not available: {e}")
@@ -130,7 +137,11 @@ def _run_gui() -> None:
         app.setWindowIcon(QIcon(str(icon_path)))
 
     window = MainWindow()
-    window.showMaximized()
+    # Show first, then maximize on next event loop tick to avoid X11 BadWindow
+    # race condition when VTK's render window is configured before the Qt
+    # window is fully mapped.
+    window.show()
+    QTimer.singleShot(0, window.showMaximized)
     sys.exit(app.exec())
 
 
