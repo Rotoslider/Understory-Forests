@@ -1,0 +1,5 @@
+[console_scripts]
+understory = understory.__main__:main
+
+[gui_scripts]
+understory-gui = understory.__main__:main
