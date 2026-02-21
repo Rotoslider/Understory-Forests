@@ -2,8 +2,6 @@
 
 ### Forest Structural Complexity Tool
 
-![banner.png](readme_images/banner.png)
-
 Understory is a desktop application for extracting plot-scale forest measurements from high-resolution point clouds. It works with Terrestrial Laser Scanning (TLS), Mobile Laser Scanning (MLS), Terrestrial Photogrammetry, and UAS Photogrammetry data.
 
 Built on top of the FSCT pipeline by Sean Krisanski, Understory provides a full GUI workflow: load a point cloud, prepare it, run semantic segmentation and measurement, then explore results in an interactive 3D viewer with branded reports and PDF export.
@@ -237,24 +235,43 @@ All pipeline parameters are exposed through the GUI with tooltips explaining eac
 
 ## Installation
 
-### Requirements
+### System Requirements
 
-- Python 3.10+ (developed on 3.12)
-- NVIDIA GPU with CUDA support (strongly recommended)
-- 16+ GB RAM (128 GB recommended for large point clouds)
+- **OS:** Ubuntu 24.04 (primary platform)
+- **Python:** 3.10 – 3.12 (developed on 3.12.3)
+- **GPU:** NVIDIA GPU with CUDA support (strongly recommended)
+- **NVIDIA Driver:** 570+ with CUDA 12.8
+- **RAM:** 16+ GB (128 GB recommended for large point clouds)
 
-### Setup
+### Quick Install (Recommended)
+
+The easiest way to set up Understory on a fresh Ubuntu system:
 
 ```bash
-git clone https://github.com/your-repo/FSCT.git
-cd FSCT
+git clone <repo-url> Understory_Forests
+cd Understory_Forests
+chmod +x install.sh
+./install.sh
+```
+
+The script checks prerequisites, creates a virtual environment, installs PyTorch with CUDA 12.8, installs Understory in editable mode, and builds the PyG extensions.
+
+### Manual Setup
+
+```bash
+cd Understory_Forests
 
 # Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# venv\Scripts\activate   # Windows
+python3 -m venv venv
+source venv/bin/activate
 
-# Install the package
+# Upgrade pip
+pip install --upgrade pip
+
+# Install PyTorch with CUDA 12.8
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+
+# Install Understory in editable mode
 pip install -e .
 
 # Install PyTorch Geometric extensions (requires torch at build time)
@@ -324,14 +341,6 @@ See the **[User Guide](USER_GUIDE.md)** ([PDF](USER_GUIDE.pdf)) for a complete w
 
 See the **[Training Guide](TRAINING_GUIDE.md)** ([PDF](TRAINING_GUIDE.pdf)) for a step-by-step tutorial on preparing training data and retraining the model for your specific forest type. Covers the full workflow from raw scan to improved model.
 
-### Command Line (legacy)
-
-```bash
-python run.py
-```
-
-Open `run.py` and set `num_procs`, `batch_size`, and other parameters for your hardware. Running the script opens a file dialog to select .las files.
-
 ---
 
 ## Data Outputs
@@ -355,11 +364,10 @@ Open `run.py` and set `num_procs`, `batch_size`, and other parameters for your h
 | Volume_2 | Cone + cylinder approximation |
 | Crown_mean_x/y | Crown centroid |
 | Crown_top_x/y/z | Highest crown point |
+| Crown_area | Crown projection area (m²) |
 | mean_understory_height | Average understory height within 5m radius |
 
 **CCI** indicates scan completeness: single-scan TLS typically maxes at ~0.5 (one side visible), complete multi-scan coverage approaches 1.0.
-
-![CCI.jpg](readme_images/CCI.jpg)
 
 ---
 
@@ -379,7 +387,7 @@ The PointNet++ model classifies points into 4 classes:
 ## Project Structure
 
 ```
-FSCT/
+Understory_Forests/
 ├── understory/              # Understory GUI package
 │   ├── __main__.py          # Entry point (python -m understory)
 │   ├── core/                # Pipeline, paths, reports, tree registry
@@ -407,6 +415,7 @@ FSCT/
 ├── model/                   # Trained model weights (model.pth)
 ├── tests/                   # Test suite (76 tests)
 ├── data/                    # Training/test datasets
+├── install.sh               # Automated setup script
 └── pyproject.toml           # Package configuration
 ```
 

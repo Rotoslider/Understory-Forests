@@ -21,9 +21,9 @@ dependencies = [
     "open3d>=0.18",
 
     # ML / Deep Learning (install torch separately, see README)
-    # torch>=2.7.0+cu128  — install via: pip install torch --index-url https://download.pytorch.org/whl/cu128
-    # torch-geometric      — install via: pip install torch-geometric --find-links https://data.pyg.org/whl/torch-2.7.0+cu128.html
-    # torch-cluster, torch-scatter, torch-sparse — same find-links
+    # torch>=2.10.0+cu128 — install via: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+    # torch-geometric     — install via: pip install torch-geometric
+    # torch-cluster, torch-scatter, torch-sparse — pip install ... -f https://data.pyg.org/whl/torch-2.10.0+cu128.html
     "torch-geometric",
 
     # ML utilities
