@@ -25,8 +25,17 @@ class TrainingDataset(Dataset):
             random.shuffle(shuffle_index)
             point_cloud = point_cloud[shuffle_index[: self.max_sample_points]]
 
+        # Filter to valid labels only (1-4) — model has 4 classes, shifted to 0-3
+        valid = (point_cloud[:, self.label_index] >= 1) & (point_cloud[:, self.label_index] <= 4)
+        point_cloud = point_cloud[valid]
+        if point_cloud.shape[0] == 0:
+            # Return a dummy sample if all points were noise
+            x = torch.zeros((self.min_sample_points, 3), dtype=torch.float)
+            y = torch.zeros(self.min_sample_points, dtype=torch.long)
+            return Data(pos=x, x=None, y=y)
+
         x = point_cloud[:, :3]
-        y = point_cloud[:, self.label_index] - 1
+        y = point_cloud[:, self.label_index] - 1  # shift 1-4 → 0-3
         x, y = augmentations(x, y, self.min_sample_points)
         if np.all(y != 0):
             y[y == 2] = 3  # if no ground is present, CWD is relabelled as stem.
@@ -54,8 +63,15 @@ class ValidationDataset(Dataset):
     def __getitem__(self, index):
         with torch.no_grad():
             point_cloud = np.load(self.filenames[index])
+            # Filter to valid labels only (1-4) — model has 4 classes, shifted to 0-3
+            valid = (point_cloud[:, self.label_index] >= 1) & (point_cloud[:, self.label_index] <= 4)
+            point_cloud = point_cloud[valid]
+            if point_cloud.shape[0] == 0:
+                x = torch.zeros((1, 3), dtype=torch.float)
+                y = torch.zeros(1, dtype=torch.long)
+                return Data(pos=x, x=None, y=y)
             x = point_cloud[:, :3]
-            y = point_cloud[:, self.label_index] - 1
+            y = point_cloud[:, self.label_index] - 1  # shift 1-4 → 0-3
             # Keep on CPU — moved to GPU in training loop to avoid CUDA fork errors
             x = torch.from_numpy(x.copy()).type(torch.float)
             y = torch.from_numpy(y.copy()).type(torch.long)

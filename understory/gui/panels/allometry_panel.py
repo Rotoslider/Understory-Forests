@@ -249,9 +249,15 @@ class AllometryPanel(QDialog):
         self._preview_table.setSelectionBehavior(QTableView.SelectRows)
         preview_layout.addWidget(self._preview_table)
 
+        preview_btn_row = QHBoxLayout()
         preview_btn = QPushButton("Refresh Preview")
         preview_btn.clicked.connect(self._refresh_preview)
-        preview_layout.addWidget(preview_btn)
+        preview_btn_row.addWidget(preview_btn)
+
+        export_csv_btn = QPushButton("Export CSV...")
+        export_csv_btn.clicked.connect(self._export_preview_csv)
+        preview_btn_row.addWidget(export_csv_btn)
+        preview_layout.addLayout(preview_btn_row)
 
         right_layout.addWidget(preview_group)
 
@@ -477,6 +483,25 @@ class AllometryPanel(QDialog):
 
         preview_df = result[ordered].copy() if ordered else result.copy()
         self._preview_model.set_dataframe(preview_df)
+
+    def _export_preview_csv(self) -> None:
+        """Export the current preview table to a CSV file."""
+        df = self._preview_model._df
+        if df is None or df.empty:
+            QMessageBox.information(
+                self, "No Preview",
+                "Refresh the preview first to generate data.",
+            )
+            return
+
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, "Export Preview CSV", "", "CSV Files (*.csv);;All Files (*)",
+        )
+        if filepath:
+            if not filepath.endswith(".csv"):
+                filepath += ".csv"
+            df.to_csv(filepath, index=False)
+            QMessageBox.information(self, "Exported", f"Preview exported to:\n{filepath}")
 
     # ------------------------------------------------------------------
     # Apply

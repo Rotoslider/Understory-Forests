@@ -67,6 +67,12 @@ class TrainModel:
             for point_cloud_file in point_cloud_list:
                 print(point_cloud_file)
                 point_cloud, headers = load_file(point_cloud_file, headers_of_interest=["x", "y", "z", "label"])
+                if point_cloud.shape[1] < 4 or (headers and "label" not in headers):
+                    print(
+                        f"WARNING: Skipping {point_cloud_file} — no 'label' column found. "
+                        f"Training data must have x, y, z, and label columns."
+                    )
+                    continue
                 self.preprocess_point_cloud(
                     point_cloud, get_fsct_path("data") + "/" + data_subdirectory + "/sample_dir/"
                 )

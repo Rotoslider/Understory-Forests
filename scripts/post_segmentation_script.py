@@ -234,7 +234,8 @@ class PostProcessing:
 
         self.post_processing_time_end = time.time()
         self.post_processing_time = self.post_processing_time_end - self.post_processing_time_start
-        print("Post-processing took", self.post_processing_time, "seconds")
+        t = self.post_processing_time
+        print(f"Post-processing took {int(t // 60)}m {t % 60:.1f}s")
         self.plot_summary["Post processing time (s)"] = self.post_processing_time
         self.plot_summary["Num Terrain Points"] = self.terrain_points.shape[0]
         self.plot_summary["Num Vegetation Points"] = self.vegetation_points.shape[0]

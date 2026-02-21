@@ -76,6 +76,7 @@ class PointCloudViewer(QWidget):
     point_picked = Signal(int, float, float, float)  # index, x, y, z
     plot_centre_dragged = Signal(float, float)  # x, y from interactive widget
     crop_state_changed = Signal(bool)  # True when cropped, False when reset
+    trim_region_selected = Signal()  # emitted when user finishes rectangle selection
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -115,6 +116,10 @@ class PointCloudViewer(QWidget):
 
         # Comparison state
         self._comparison_distances: Optional[np.ndarray] = None
+
+        # Trim selection state
+        self._trim_selection: Optional[np.ndarray] = None  # indices into _points_full
+        self._trim_active: bool = False
 
         # Unit system
         self._unit_system: UnitSystem = UnitSystem.METRIC
@@ -993,4 +998,109 @@ class PointCloudViewer(QWidget):
             self._color_combo.setCurrentIndex(self._color_combo.count() - 1)
             self._color_combo.blockSignals(False)
 
+        self._render(preserve_camera=True)
+
+    # --- Trim Tool ---
+
+    def enable_trim_selection(self) -> None:
+        """Activate rectangle-through-picking for point cloud trimming."""
+        if self._points_full is None:
+            return
+        # Cancel any active focus/measure mode
+        if self._focus_mode:
+            self._focus_btn.setChecked(False)
+        if self._measure_mode != MeasureMode.OFF:
+            self.cancel_measurement()
+
+        self._trim_active = True
+        self._trim_selection = None
+        import warnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", message=".*orig_extract_id.*", category=DeprecationWarning
+            )
+            self._plotter.enable_rectangle_through_picking(
+                callback=self._on_trim_select, start=True, show_message=False,
+            )
+
+    def _on_trim_select(self, selected) -> None:
+        """Handle rectangle-through picking for the trim tool."""
+        if self._points_full is None or selected is None:
+            return
+
+        # Extract points from selection
+        if hasattr(selected, "points"):
+            pts = np.asarray(selected.points)
+        else:
+            pts = np.asarray(selected)
+
+        if pts.ndim == 1:
+            if pts.shape[0] >= 3:
+                pts = pts.reshape(-1, 3)
+            else:
+                return
+        if pts.shape[0] == 0:
+            return
+
+        # Map picked mesh points back to full-resolution indices via cKDTree
+        from scipy.spatial import cKDTree
+        tree = cKDTree(self._points_full)
+        _, indices = tree.query(pts[:, :3], k=1)
+        self._trim_selection = np.unique(indices)
+
+        # Highlight selected region with white overlay
+        self._render(preserve_camera=True)
+        if self._trim_selection is not None and len(self._trim_selection) > 0:
+            highlight_pts = self._points_full[self._trim_selection]
+            highlight_cloud = pv.PolyData(highlight_pts)
+            self._plotter.add_mesh(
+                highlight_cloud, color="white", point_size=4,
+                render_points_as_spheres=False, opacity=0.6, name="trim_highlight",
+            )
+            self._plotter.render()
+
+        self.trim_region_selected.emit()
+
+    def apply_trim(self, keep: bool) -> None:
+        """Apply the trim operation.
+
+        Args:
+            keep: If True, keep only selected points. If False, remove selected points.
+        """
+        if self._trim_selection is None or self._points_full is None:
+            return
+
+        self.push_undo("Trim region")
+
+        if keep:
+            mask = np.zeros(self._points_full.shape[0], dtype=bool)
+            mask[self._trim_selection] = True
+        else:
+            mask = np.ones(self._points_full.shape[0], dtype=bool)
+            mask[self._trim_selection] = False
+
+        self._points_full = self._points_full[mask]
+        if self._colors_full is not None:
+            self._colors_full = self._colors_full[mask]
+        if self._labels is not None:
+            self._labels = self._labels[mask]
+        if self._tree_ids is not None:
+            self._tree_ids = self._tree_ids[mask]
+        self._crop_mask = None
+
+        self._trim_selection = None
+        self._trim_active = False
+        self._plotter.disable_picking()
+        self._plotter.enable_trackball_style()
+
+        self.crop_state_changed.emit(True)
+        self._build_lod()
+        self._render()
+
+    def cancel_trim(self) -> None:
+        """Cancel trim selection and restore normal interaction."""
+        self._trim_selection = None
+        self._trim_active = False
+        self._plotter.disable_picking()
+        self._plotter.enable_trackball_style()
         self._render(preserve_camera=True)

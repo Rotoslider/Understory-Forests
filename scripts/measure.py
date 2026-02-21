@@ -166,6 +166,7 @@ class MeasureTree:
             Crown_top_y=13,
             Crown_top_z=14,
             mean_understory_height_in_5m_radius=15,
+            Crown_area=16,
         )
 
         self.terrain_points, headers_of_interest = load_file(
@@ -1326,8 +1327,18 @@ class MeasureTree:
                         + " m"
                     )
 
+                    # Compute crown area from XY convex hull of vegetation points
+                    if tree_vegetation.shape[0] >= 3:
+                        try:
+                            hull = ConvexHull(tree_vegetation[:, :2])
+                            crown_area = hull.volume  # 2D hull → .volume = area
+                        except Exception:
+                            crown_area = 0.0
+                    else:
+                        crown_area = 0.0
+
                     print(description)
-                    this_trees_data = np.zeros((1, 16), dtype="object")
+                    this_trees_data = np.zeros((1, 17), dtype="object")
                     this_trees_data[:, self.tree_data_dict["PlotId"]] = self.plot_summary["PlotId"]
                     this_trees_data[:, self.tree_data_dict["TreeId"]] = int(tree_id)
                     this_trees_data[:, self.tree_data_dict["x_tree_base"]] = x_tree_base
@@ -1346,6 +1357,7 @@ class MeasureTree:
                     this_trees_data[
                         :, self.tree_data_dict["mean_understory_height_in_5m_radius"]
                     ] = mean_understory_height_in_5m_radius
+                    this_trees_data[:, self.tree_data_dict["Crown_area"]] = crown_area
 
                     text_size = 0.00256
                     line_height = 0.025
@@ -1455,7 +1467,7 @@ class MeasureTree:
             veg_points_sorted = np.vstack(veg_sorted_list) if veg_sorted_list else np.zeros((0, len(list(self.veg_dict))))
             cleaned_cylinders = np.vstack(cleaned_cylinders_list) if cleaned_cylinders_list else np.zeros((0, cleaned_cyls.shape[1]))
             taper_array = np.vstack(taper_list) if taper_list else np.zeros((0, self.taper_measurement_heights.shape[0] + 5))
-            tree_data = np.vstack(tree_data_list) if tree_data_list else np.zeros((0, 16))
+            tree_data = np.vstack(tree_data_list) if tree_data_list else np.zeros((0, 17))
 
             save_file(self.output_dir + "text_point_cloud.las", self.text_point_cloud)
             if self.parameters["sort_stems"] or self.parameters["generate_output_point_cloud"]:
@@ -1495,7 +1507,7 @@ class MeasureTree:
 
         # Finalize accumulators from lists (handles case where tree_id_list was empty)
         if not tree_data_list:
-            tree_data = np.zeros((0, 16))
+            tree_data = np.zeros((0, 17))
             taper_array = np.zeros((0, self.taper_measurement_heights.shape[0] + 5))
             stem_points_sorted = np.zeros((0, len(list(self.stem_dict))))
             veg_points_sorted = np.zeros((0, len(list(self.veg_dict))))
@@ -1614,5 +1626,6 @@ class MeasureTree:
         self.plot_summary["CWD Coverage Fraction"] = float(self.cwd_area) / float(self.ground_area)
 
         self.plot_summary.to_csv(self.output_dir + "plot_summary.csv", index=False)
-        print("Measuring plot took", self.measure_total_time, "s")
+        t = self.measure_total_time
+        print(f"Measuring plot took {int(t // 60)}m {t % 60:.1f}s")
         print("Measuring plot done.")

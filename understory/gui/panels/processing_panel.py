@@ -176,6 +176,9 @@ class ProcessingPanel(QWidget):
     reset_crop_requested = Signal()
     subsample_requested = Signal(float)  # voxel spacing in metres
     save_cloud_requested = Signal(str)  # filepath to save modified cloud
+    trim_select_requested = Signal()  # start rectangle selection for trimming
+    trim_apply_requested = Signal(bool)  # True=keep, False=remove
+    trim_cancel_requested = Signal()  # cancel trim selection
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -523,6 +526,41 @@ class ProcessingPanel(QWidget):
             lambda: self.subsample_requested.emit(self._subsample_spacing.value())
         )
         glayout.addWidget(preview_subsample_btn)
+        layout.addWidget(group)
+
+        # Trim
+        group = QGroupBox("Trim Point Cloud")
+        glayout = QVBoxLayout(group)
+        info = QLabel(
+            "Draw a rectangle to select a region, then choose to keep or remove those points."
+        )
+        info.setWordWrap(True)
+        glayout.addWidget(info)
+
+        self._trim_select_btn = QPushButton("Select Region")
+        self._trim_select_btn.setToolTip("Draw a rectangle on the 3D view to select points")
+        self._trim_select_btn.clicked.connect(self._on_trim_select)
+        glayout.addWidget(self._trim_select_btn)
+
+        trim_action_row = QHBoxLayout()
+        self._trim_keep_btn = QPushButton("Keep Selected")
+        self._trim_keep_btn.setToolTip("Keep only the selected points, remove everything else")
+        self._trim_keep_btn.setEnabled(False)
+        self._trim_keep_btn.clicked.connect(lambda: self.trim_apply_requested.emit(True))
+        trim_action_row.addWidget(self._trim_keep_btn)
+
+        self._trim_remove_btn = QPushButton("Remove Selected")
+        self._trim_remove_btn.setToolTip("Remove the selected points, keep everything else")
+        self._trim_remove_btn.setEnabled(False)
+        self._trim_remove_btn.clicked.connect(lambda: self.trim_apply_requested.emit(False))
+        trim_action_row.addWidget(self._trim_remove_btn)
+        glayout.addLayout(trim_action_row)
+
+        self._trim_cancel_btn = QPushButton("Cancel")
+        self._trim_cancel_btn.setEnabled(False)
+        self._trim_cancel_btn.clicked.connect(self._on_trim_cancel)
+        glayout.addWidget(self._trim_cancel_btn)
+
         layout.addWidget(group)
 
         # Save
@@ -917,7 +955,7 @@ class ProcessingPanel(QWidget):
         self._select_all_layers_btn.clicked.connect(self._select_all_layers)
         btn_row.addWidget(self._select_all_layers_btn)
 
-        self._load_layers_btn = QPushButton("Load Selected Layers")
+        self._load_layers_btn = QPushButton("Load Layers")
         self._load_layers_btn.setEnabled(False)
         self._load_layers_btn.clicked.connect(self._load_selected_layers)
         btn_row.addWidget(self._load_layers_btn)
@@ -1277,6 +1315,32 @@ class ProcessingPanel(QWidget):
         self._centre_x.setValue(x)
         self._centre_y.setValue(y)
         self._updating_from_viewer = False
+
+    def _on_trim_select(self) -> None:
+        """Start rectangle selection for trimming."""
+        self._trim_select_btn.setEnabled(False)
+        self._trim_cancel_btn.setEnabled(True)
+        self.trim_select_requested.emit()
+
+    def _on_trim_cancel(self) -> None:
+        """Cancel trim selection."""
+        self._trim_select_btn.setEnabled(True)
+        self._trim_keep_btn.setEnabled(False)
+        self._trim_remove_btn.setEnabled(False)
+        self._trim_cancel_btn.setEnabled(False)
+        self.trim_cancel_requested.emit()
+
+    def on_trim_region_selected(self) -> None:
+        """Called when the viewer finishes rectangle selection for trim."""
+        self._trim_keep_btn.setEnabled(True)
+        self._trim_remove_btn.setEnabled(True)
+
+    def on_trim_applied(self) -> None:
+        """Called after a trim operation completes — reset button states."""
+        self._trim_select_btn.setEnabled(True)
+        self._trim_keep_btn.setEnabled(False)
+        self._trim_remove_btn.setEnabled(False)
+        self._trim_cancel_btn.setEnabled(False)
 
     def _save_prepared_cloud(self) -> None:
         # Default to project folder if a project has been saved

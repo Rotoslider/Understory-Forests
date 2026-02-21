@@ -280,8 +280,8 @@ QSplitter::handle:vertical {
     height: 3px;
 }
 
-/* === Table / Tree Views === */
-QTableView, QTreeView {
+/* === Table / Tree / List Views === */
+QTableView, QTreeView, QListWidget {
     background-color: #0d1b16;
     alternate-background-color: #1a2e26;
     border: 1px solid #2d7a5e;

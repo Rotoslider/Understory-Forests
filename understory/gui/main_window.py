@@ -365,7 +365,7 @@ class MainWindow(QMainWindow):
 
         # Left panel: processing controls
         self._processing_panel = ProcessingPanel()
-        self._processing_panel.setMinimumWidth(320)
+        self._processing_panel.setMinimumWidth(380)
         self._processing_panel.setMaximumWidth(500)
         self._processing_panel.file_loaded.connect(self._on_file_loaded)
         self._processing_panel.pipeline_started.connect(self._on_pipeline_started)
@@ -377,6 +377,9 @@ class MainWindow(QMainWindow):
         self._processing_panel.reset_crop_requested.connect(self._on_reset_crop)
         self._processing_panel.subsample_requested.connect(self._on_subsample_preview)
         self._processing_panel.save_cloud_requested.connect(self._on_save_cloud)
+        self._processing_panel.trim_select_requested.connect(self._on_trim_select)
+        self._processing_panel.trim_apply_requested.connect(self._on_trim_apply)
+        self._processing_panel.trim_cancel_requested.connect(self._on_trim_cancel)
         self._processing_panel.project_saved.connect(self._on_project_saved)
         self._processing_panel.load_output_layers.connect(self._on_load_output_layers)
         self._processing_panel.tree_selected.connect(self._on_tree_selected)
@@ -387,11 +390,12 @@ class MainWindow(QMainWindow):
         self._viewer.point_picked.connect(self._on_point_picked)
         self._viewer.plot_centre_dragged.connect(self._on_plot_centre_dragged)
         self._viewer.crop_state_changed.connect(self._on_crop_state_changed)
+        self._viewer.trim_region_selected.connect(self._processing_panel.on_trim_region_selected)
         splitter.addWidget(self._viewer)
 
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([360, 840])
+        splitter.setSizes([380, 820])
 
         layout.addWidget(splitter)
 
@@ -720,6 +724,27 @@ class MainWindow(QMainWindow):
         """Forward reset crop request from Prepare tab to the viewer."""
         self._viewer._reset_crop()
 
+    @Slot()
+    def _on_trim_select(self) -> None:
+        """Forward trim selection request to the viewer."""
+        self._viewer.enable_trim_selection()
+
+    @Slot(bool)
+    def _on_trim_apply(self, keep: bool) -> None:
+        """Apply trim and update panel state."""
+        n_before = self._viewer._points_full.shape[0] if self._viewer._points_full is not None else 0
+        self._viewer.apply_trim(keep)
+        n_after = self._viewer._points_full.shape[0] if self._viewer._points_full is not None else 0
+        action = "Kept" if keep else "Removed"
+        self._status_label.setText(f"{action}: {n_before:,} -> {n_after:,} points")
+        self._update_point_count()
+        self._processing_panel.on_trim_applied()
+
+    @Slot()
+    def _on_trim_cancel(self) -> None:
+        """Cancel trim selection."""
+        self._viewer.cancel_trim()
+
     @Slot(float)
     def _on_subsample_preview(self, spacing: float) -> None:
         """Apply voxel-grid subsampling to the loaded point cloud in the viewer."""
@@ -798,6 +823,17 @@ class MainWindow(QMainWindow):
                 self._processing_panel._log(
                     f"Project updated with prepared cloud: {os.path.basename(filepath)}"
                 )
+
+            # Offer to reload saved cloud as the active project input
+            reply = QMessageBox.question(
+                self,
+                "Reload Cloud",
+                "Reload this cloud as the active project input?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if reply == QMessageBox.Yes:
+                self._processing_panel.set_input_file(filepath)
         except Exception as e:
             QMessageBox.critical(self, "Save Error", f"Failed to save point cloud: {e}")
 
