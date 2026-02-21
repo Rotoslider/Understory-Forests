@@ -1,8 +1,8 @@
-# Understory
+# Understory Forests
 
 ### Forest Structural Complexity Tool
 
-Understory is a desktop application for extracting plot-scale forest measurements from high-resolution point clouds. It works with Terrestrial Laser Scanning (TLS), Mobile Laser Scanning (MLS), Terrestrial Photogrammetry, and UAS Photogrammetry data.
+Understory Forests is a desktop application for extracting plot-scale forest measurements from high-resolution point clouds. It works with Terrestrial Laser Scanning (TLS), Mobile Laser Scanning (MLS), Terrestrial Photogrammetry, and UAS Photogrammetry data.
 
 Built on top of the FSCT pipeline by Sean Krisanski, Understory provides a full GUI workflow: load a point cloud, prepare it, run semantic segmentation and measurement, then explore results in an interactive 3D viewer with branded reports and PDF export.
 

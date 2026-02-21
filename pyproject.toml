@@ -44,6 +44,12 @@ dependencies = [
     "Markdown>=3.6",
     "mdutils>=1.6",
 
+    # GIS export
+    "geopandas>=0.14",
+
+    # Video export
+    "imageio-ffmpeg>=0.4",
+
     # Misc
     "Pillow>=10.2",
     "tqdm>=4.66",
