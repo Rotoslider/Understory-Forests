@@ -1156,7 +1156,7 @@ class ProcessingPanel(QWidget):
             return
         filepath, selected_filter = QFileDialog.getSaveFileName(
             self, "Export to GIS", "",
-            "GeoJSON (*.geojson);;CSV with Coordinates (*.csv);;All Files (*)",
+            "GeoJSON (*.geojson);;Shapefile (*.shp);;CSV with Coordinates (*.csv);;All Files (*)",
         )
         if not filepath:
             return
@@ -1168,6 +1168,11 @@ class ProcessingPanel(QWidget):
                 if not filepath.endswith(".geojson"):
                     filepath += ".geojson"
                 export_geojson(tree_data, filepath)
+            elif filepath.endswith(".shp") or "Shapefile" in selected_filter:
+                from understory.core.gis_export import export_shapefile
+                if not filepath.endswith(".shp"):
+                    filepath += ".shp"
+                export_shapefile(tree_data, filepath)
             else:
                 from understory.core.gis_export import export_csv_with_coords
                 if not filepath.endswith(".csv"):
