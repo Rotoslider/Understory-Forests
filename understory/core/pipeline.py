@@ -77,6 +77,194 @@ if _scripts_dir not in sys.path:
     sys.path.insert(0, _scripts_dir)
 
 
+def _remap_output_tree_ids(paths, id_mapping: dict[int, int]) -> None:
+    """Remap tree_id values in LAS output files and regenerate text labels.
+
+    Called after TreeRegistry matching to keep point cloud tree IDs in sync
+    with the updated tree_data.csv.
+
+    Args:
+        paths: FSCTPaths instance for the current run.
+        id_mapping: Dict mapping {old_tree_id: new_tree_id}.
+    """
+    import numpy as np
+    import pandas as pd
+    from tools import load_file, save_file
+
+    stem_veg_headers = ["x", "y", "z", "red", "green", "blue", "label", "height_above_dtm", "tree_id"]
+    cyl_headers = ["x", "y", "z", "nx", "ny", "nz", "radius", "CCI", "branch_id",
+                   "parent_branch_id", "tree_id", "tree_volume", "segment_angle_to_horiz", "height_above_dtm"]
+
+    # LAS files that have tree_id as a column field
+    las_files_with_tree_id = [
+        ("stem_points_sorted.las", stem_veg_headers),
+        ("veg_points_sorted.las", stem_veg_headers),
+        ("tree_aware_cropped_point_cloud.las", stem_veg_headers),
+        ("cleaned_cyls.las", cyl_headers),
+        ("cleaned_cyl_vis.las", cyl_headers),
+        ("sorted_full_cyl_array.las", cyl_headers),
+        ("interpolated_full_cyl_array.las", cyl_headers),
+    ]
+
+    for filename, headers in las_files_with_tree_id:
+        filepath = paths.output_dir / filename
+        if not filepath.exists():
+            continue
+        try:
+            data, loaded_headers = load_file(str(filepath), headers_of_interest=headers)
+            if data.shape[0] == 0:
+                continue
+            tid_col = headers.index("tree_id")
+            changed = False
+            for old_id, new_id in id_mapping.items():
+                mask = data[:, tid_col] == old_id
+                if np.any(mask):
+                    data[mask, tid_col] = new_id
+                    changed = True
+            if changed:
+                save_file(str(filepath), data, headers_of_interest=headers)
+        except Exception:
+            continue
+
+    # Also remap TreeId in taper_data.csv
+    taper_path = paths.output_dir / "taper_data.csv"
+    if taper_path.exists():
+        try:
+            taper_df = pd.read_csv(taper_path)
+            if "TreeId" in taper_df.columns:
+                taper_df["TreeId"] = taper_df["TreeId"].map(
+                    lambda x: id_mapping.get(int(x), x))
+                taper_df.to_csv(taper_path, index=False)
+        except Exception:
+            pass
+
+    # Regenerate text_point_cloud.las with updated IDs
+    _regenerate_text_labels(paths, id_mapping)
+
+
+def _regenerate_text_labels(paths, id_mapping: dict[int, int]) -> None:
+    """Regenerate the 3D text label point cloud with updated tree IDs.
+
+    The text_point_cloud.las contains 3D points arranged as readable text
+    (tree ID, DBH, CCI, height, volume). Since the text is baked into the
+    geometry, we must regenerate it when IDs change.
+    """
+    import os
+    import numpy as np
+    import pandas as pd
+    from tools import load_file, save_file, get_fsct_path
+
+    tree_data_path = paths.tree_data_csv
+    text_path = paths.output_dir / "text_point_cloud.las"
+    if not tree_data_path.exists():
+        return
+
+    tree_data = pd.read_csv(tree_data_path)
+    if tree_data.empty:
+        return
+
+    # Load character grids for text rendering
+    characters = [
+        "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+        "dot", "m", "space", "_", "-", "semiC",
+        "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L",
+        "_M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+    ]
+    numbers_dir = get_fsct_path("tools/numbers")
+    character_viz = []
+    for name in characters:
+        csv_path = os.path.join(numbers_dir, name + ".csv")
+        character_viz.append(np.genfromtxt(csv_path, delimiter=","))
+
+    def _get_character(char):
+        if char == ":":
+            return character_viz[characters.index("semiC")]
+        elif char == ".":
+            return character_viz[characters.index("dot")]
+        elif char == " ":
+            return character_viz[characters.index("space")]
+        elif char == "M":
+            return character_viz[characters.index("_M")]
+        else:
+            return character_viz[characters.index(char)]
+
+    def _make_text(character_size, xpos, ypos, zpos, offset, text):
+        text_points = np.zeros((11, 0))
+        for ch in text:
+            text_points = np.hstack((text_points, np.array(_get_character(str(ch)))))
+        indices = np.argwhere(np.rot90(text_points, axes=(1, 0)) == 1)
+        if indices.shape[0] == 0:
+            return np.zeros((0, 3))
+        points = np.column_stack((
+            indices[:, 0].astype(float), indices[:, 1].astype(float),
+            np.zeros(indices.shape[0]),
+        ))
+        roll_mat = np.array([
+            [1, 0, 0],
+            [0, np.cos(-np.pi / 4), -np.sin(-np.pi / 4)],
+            [0, np.sin(-np.pi / 4), np.cos(-np.pi / 4)],
+        ])
+        points = np.dot(points, roll_mat)
+        points = points * character_size + [xpos + 0.2 + 0.5 * offset, ypos, zpos]
+        return points
+
+    def _points_along_line(x0, y0, z0, x1, y1, z1, resolution=0.05):
+        n = int(np.linalg.norm(np.array([x1, y1, z1]) - np.array([x0, y0, z0])) / resolution)
+        if n < 2:
+            n = 2
+        return np.column_stack((
+            np.linspace(x0, x1, n), np.linspace(y0, y1, n), np.linspace(z0, z1, n),
+        ))
+
+    def _circle_points(x, y, z, r, n=100):
+        angles = np.linspace(0, 2 * np.pi, n)
+        return np.column_stack((r * np.cos(angles) + x, r * np.sin(angles) + y, np.full(n, z)))
+
+    text_size = 0.00256
+    line_height = 0.025
+    all_parts = []
+
+    for _, row in tree_data.iterrows():
+        tree_id = int(row["TreeId"])
+        dbh = float(row["DBH"])
+        cci = float(row["CCI_at_BH"])
+        height = float(row["Height"])
+        vol1 = float(row["Volume_1"])
+        vol2 = float(row["Volume_2"])
+        x_base = float(row["x_tree_base"])
+        y_base = float(row["y_tree_base"])
+        z_base = float(row["z_tree_base"])
+
+        if dbh == 0 or x_base == 0 or y_base == 0:
+            continue
+
+        # DBH position (approximate — use crown_mean or base offset)
+        dbh_x = x_base
+        dbh_y = y_base
+        dbh_z = z_base + 1.3
+
+        all_parts.append(_make_text(text_size, dbh_x, dbh_y + 2 * line_height, dbh_z + 2 * line_height, dbh * 0.5,
+                                    "         TREE ID: " + str(tree_id)))
+        all_parts.append(_make_text(text_size, dbh_x, dbh_y + line_height, dbh_z + line_height, dbh * 0.5,
+                                    "            DIAM: " + str(np.around(dbh, 2)) + "m"))
+        all_parts.append(_make_text(text_size, dbh_x, dbh_y, dbh_z, dbh * 0.5,
+                                    "       CCI AT BH: " + str(np.around(cci, 2))))
+        all_parts.append(_make_text(text_size, dbh_x, dbh_y - 2 * line_height, dbh_z - 2 * line_height, dbh * 0.5,
+                                    "          HEIGHT: " + str(np.around(height, 2)) + "m"))
+        all_parts.append(_make_text(text_size, dbh_x, dbh_y - 3 * line_height, dbh_z - 3 * line_height, dbh * 0.5,
+                                    "          VOLUME 1: " + str(np.around(vol1, 2)) + "m3"))
+        all_parts.append(_make_text(text_size, dbh_x, dbh_y - 4 * line_height, dbh_z - 4 * line_height, dbh * 0.5,
+                                    "          VOLUME 2: " + str(np.around(vol2, 2)) + "m3"))
+        # Height measurement line
+        all_parts.append(_points_along_line(x_base, y_base, z_base, x_base, y_base, z_base + height, resolution=0.025))
+        # DBH circle
+        all_parts.append(_circle_points(dbh_x, dbh_y, dbh_z, dbh / 2))
+
+    if all_parts:
+        text_cloud = np.vstack([p for p in all_parts if p.shape[0] > 0])
+        save_file(str(text_path), text_cloud)
+
+
 def run_pipeline(
     config: ProjectConfig,
     progress_callback: Optional[Callable[[str, float], None]] = None,
@@ -238,8 +426,12 @@ def run_pipeline(
             if registry_path.parent.exists():
                 registry = TreeRegistry(registry_path)
                 tree_df = pd.read_csv(paths.tree_data_csv)
-                tree_df = registry.match_trees(tree_df)
+                tree_df, id_mapping = registry.match_trees(tree_df)
                 tree_df.to_csv(paths.tree_data_csv, index=False)
+
+                # If any IDs changed, update them in all output files
+                if id_mapping:
+                    _remap_output_tree_ids(paths, id_mapping)
         except Exception:
             pass  # Non-critical — fall back to pipeline-assigned IDs
 

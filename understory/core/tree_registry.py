@@ -57,7 +57,7 @@ class TreeRegistry:
         tree_data: pd.DataFrame,
         match_radius: float = 2.0,
         dbh_weight: float = 0.3,
-    ) -> pd.DataFrame:
+    ) -> tuple[pd.DataFrame, dict[int, int]]:
         """Match newly measured trees against the registry.
 
         Args:
@@ -66,10 +66,10 @@ class TreeRegistry:
             dbh_weight: Weight of DBH similarity (0-1) in tiebreaking. 0 = pure distance.
 
         Returns:
-            Updated tree_data DataFrame with persistent TreeId values.
+            Tuple of (updated tree_data DataFrame, id_mapping dict {old_id: new_id}).
         """
         if tree_data.empty:
-            return tree_data
+            return tree_data, {}
 
         tree_data = tree_data.copy()
         new_positions = np.column_stack([
@@ -124,10 +124,11 @@ class TreeRegistry:
                 self._next_id += 1
 
         else:
-            # No registry yet — assign sequential IDs
+            # No registry yet — preserve original TreeIds from measurement
+            original_ids = tree_data["TreeId"].values.astype(int)
             for i in range(len(tree_data)):
-                persistent_ids[i] = self._next_id
-                self._next_id += 1
+                persistent_ids[i] = original_ids[i]
+            self._next_id = int(original_ids.max()) + 1 if len(original_ids) > 0 else 1
 
         # Update registry with new/updated tree data
         scan_time = datetime.now().isoformat()
@@ -149,11 +150,16 @@ class TreeRegistry:
             entry.setdefault("scan_history", []).append(scan_record)
             self._trees[pid] = entry
 
+        # Build old→new ID mapping
+        original_ids = tree_data["TreeId"].values.astype(int)
+        id_mapping = {int(old): int(new) for old, new in zip(original_ids, persistent_ids)
+                      if old != new}
+
         # Update DataFrame
         tree_data["TreeId"] = persistent_ids
 
         self._save()
-        return tree_data
+        return tree_data, id_mapping
 
     def get_tree(self, tree_id: int) -> Optional[dict]:
         """Get registry data for a specific tree."""

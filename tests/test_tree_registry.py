@@ -31,22 +31,38 @@ class TestTreeRegistry:
     def test_new_registry(self, registry_path, sample_tree_data):
         """First scan — all trees get new IDs."""
         reg = TreeRegistry(registry_path)
-        result = reg.match_trees(sample_tree_data)
+        result, id_mapping = reg.match_trees(sample_tree_data)
 
         assert len(result) == 3
         assert set(result["TreeId"]) == {1, 2, 3}
+        assert id_mapping == {}  # First run preserves original IDs
         assert registry_path.exists()
         assert reg.num_trees == 3
+
+    def test_first_run_preserves_gapped_ids(self, registry_path):
+        """First scan with gapped IDs should preserve them, not reassign sequentially."""
+        gapped = pd.DataFrame({
+            "TreeId": [1, 3, 7],
+            "x_tree_base": [10.0, 20.0, 30.0],
+            "y_tree_base": [10.0, 20.0, 30.0],
+            "DBH": [0.3, 0.5, 0.2],
+            "Height": [15.0, 25.0, 10.0],
+        })
+        reg = TreeRegistry(registry_path)
+        result, id_mapping = reg.match_trees(gapped)
+
+        assert list(result["TreeId"]) == [1, 3, 7]
+        assert id_mapping == {}
 
     def test_same_plot_matches(self, registry_path, sample_tree_data):
         """Process same plot twice — IDs should match."""
         reg1 = TreeRegistry(registry_path)
-        result1 = reg1.match_trees(sample_tree_data)
+        result1, _ = reg1.match_trees(sample_tree_data)
         ids1 = set(result1["TreeId"])
 
         # Second scan of same plot
         reg2 = TreeRegistry(registry_path)
-        result2 = reg2.match_trees(sample_tree_data)
+        result2, _ = reg2.match_trees(sample_tree_data)
         ids2 = set(result2["TreeId"])
 
         assert ids1 == ids2
@@ -62,7 +78,7 @@ class TestTreeRegistry:
         shifted["y_tree_base"] -= 0.3
 
         reg2 = TreeRegistry(registry_path)
-        result = reg2.match_trees(shifted)
+        result, _ = reg2.match_trees(shifted)
 
         # Same tree IDs should be assigned
         assert set(result["TreeId"]) == {1, 2, 3}
@@ -84,7 +100,7 @@ class TestTreeRegistry:
         with_new = pd.concat([with_new, new_tree], ignore_index=True)
 
         reg2 = TreeRegistry(registry_path)
-        result = reg2.match_trees(with_new)
+        result, _ = reg2.match_trees(with_new)
 
         # Original 3 should keep IDs 1-3, new one gets 4
         original_ids = set(result.iloc[:3]["TreeId"])
@@ -102,7 +118,7 @@ class TestTreeRegistry:
         reduced = sample_tree_data[sample_tree_data["TreeId"].isin([1, 3])].copy()
 
         reg2 = TreeRegistry(registry_path)
-        result = reg2.match_trees(reduced)
+        result, _ = reg2.match_trees(reduced)
 
         assert set(result["TreeId"]) == {1, 3}
 
@@ -142,5 +158,34 @@ class TestTreeRegistry:
         """Empty tree data should not crash."""
         reg = TreeRegistry(registry_path)
         empty = pd.DataFrame(columns=["TreeId", "x_tree_base", "y_tree_base", "DBH"])
-        result = reg.match_trees(empty)
+        result, id_mapping = reg.match_trees(empty)
         assert len(result) == 0
+        assert id_mapping == {}
+
+    def test_id_mapping_returned_on_remap(self, registry_path):
+        """When registry remaps IDs, the mapping should be returned."""
+        # First scan with IDs 1,2,3
+        first = pd.DataFrame({
+            "TreeId": [1, 2, 3],
+            "x_tree_base": [10.0, 20.0, 30.0],
+            "y_tree_base": [10.0, 20.0, 30.0],
+            "DBH": [0.3, 0.5, 0.2],
+            "Height": [15.0, 25.0, 10.0],
+        })
+        reg = TreeRegistry(registry_path)
+        reg.match_trees(first)
+
+        # Second scan: same trees but with different original IDs (as measure.py would assign)
+        second = pd.DataFrame({
+            "TreeId": [10, 20, 30],  # measure.py assigned different IDs
+            "x_tree_base": [10.0, 20.0, 30.0],
+            "y_tree_base": [10.0, 20.0, 30.0],
+            "DBH": [0.3, 0.5, 0.2],
+            "Height": [15.0, 25.0, 10.0],
+        })
+        reg2 = TreeRegistry(registry_path)
+        result, id_mapping = reg2.match_trees(second)
+
+        # Should be remapped to original persistent IDs
+        assert set(result["TreeId"]) == {1, 2, 3}
+        assert id_mapping == {10: 1, 20: 2, 30: 3}
