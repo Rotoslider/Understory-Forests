@@ -5,7 +5,7 @@ Uses PyVista + pyvistaqt for rendering inside PySide6.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
@@ -70,6 +70,21 @@ class PrepareSnapshot:
     description: str
 
 
+PER_LAYER_LOD = 2_000_000  # max points per layer in layer mode
+
+
+@dataclass
+class LayerInfo:
+    """Data for a single output layer."""
+    points: np.ndarray
+    colors: Optional[np.ndarray]
+    labels: Optional[np.ndarray]
+    tree_ids: Optional[np.ndarray]
+    lod_indices: np.ndarray
+    visible: bool = True
+    actor: object = field(default=None, repr=False)
+
+
 class PointCloudViewer(QWidget):
     """3D point cloud viewer with LOD and multiple color modes."""
 
@@ -117,6 +132,10 @@ class PointCloudViewer(QWidget):
         # Comparison state
         self._comparison_distances: Optional[np.ndarray] = None
 
+        # Layer mode state (for results viewer with per-layer toggling)
+        self._layers: dict[str, LayerInfo] = {}
+        self._layer_mode: bool = False
+
         # Trim selection state
         self._trim_selection: Optional[np.ndarray] = None  # indices into _points_full
         self._trim_active: bool = False
@@ -158,8 +177,12 @@ class PointCloudViewer(QWidget):
 
         # Focus point toggle
         self._focus_btn = QPushButton("Set Focus")
-        self._focus_btn.setToolTip("Right-click on a point to set the focus point")
+        self._focus_btn.setToolTip("Left-click a point to set the camera pivot/focus point")
         self._focus_btn.setCheckable(True)
+        self._focus_btn.setStyleSheet(
+            "QPushButton:checked { background-color: #4a9e7e; color: white; "
+            "border: 2px solid #2d7a5e; font-weight: bold; }"
+        )
         self._focus_btn.toggled.connect(self._on_focus_toggled)
         toolbar.addWidget(self._focus_btn)
 
@@ -456,7 +479,10 @@ class PointCloudViewer(QWidget):
 
     def _on_color_mode_changed(self, index: int) -> None:
         self._color_mode = self._color_combo.itemData(index)
-        self._render(preserve_camera=True)
+        if self._layer_mode and self._layers:
+            self._render_layers(preserve_camera=True)
+        else:
+            self._render(preserve_camera=True)
 
     def _on_edl_toggled(self, checked: bool) -> None:
         if checked:
@@ -478,7 +504,14 @@ class PointCloudViewer(QWidget):
     def _reset_view(self) -> None:
         if self._plotter:
             self._plotter.suppress_rendering = True
-            if self._points_full is not None:
+            if self._layer_mode and self._layers:
+                # Find center from all visible layer points
+                visible_pts = [l.points for l in self._layers.values() if l.visible]
+                if visible_pts:
+                    all_pts = np.vstack(visible_pts)
+                    center = all_pts.mean(axis=0)
+                    self._plotter.set_focus(center)
+            elif self._points_full is not None:
                 center = self._points_full.mean(axis=0)
                 self._plotter.set_focus(center)
             self._plotter.reset_camera()
@@ -540,6 +573,9 @@ class PointCloudViewer(QWidget):
         self._comparison_distances = None
         self._dragging_circle = False
         self._circle_actor = None
+        # Clear layer mode data
+        self._layers.clear()
+        self._layer_mode = False
         # Clear interactive widgets (plot circle sphere)
         if self._plot_circle_widget_active:
             try:
@@ -551,6 +587,182 @@ class PointCloudViewer(QWidget):
         self.cancel_measurement()
         self._plotter.clear()
         self._point_count_label.setText("No data loaded")
+
+    # --- Layer mode (results viewer) ---
+
+    def load_layer(
+        self,
+        name: str,
+        points: np.ndarray,
+        colors: Optional[np.ndarray] = None,
+        labels: Optional[np.ndarray] = None,
+        tree_ids: Optional[np.ndarray] = None,
+    ) -> None:
+        """Add a named layer to the viewer (layer mode).
+
+        All available layers should be loaded upfront. Use set_layer_visible()
+        to toggle individual layers without reloading or losing the camera.
+        """
+        pts = np.ascontiguousarray(points[:, :3].astype(np.float32))
+        if colors is not None:
+            colors = colors.astype(np.float64)
+            if colors.max() > 1.0:
+                colors = colors / colors.max()
+        n = pts.shape[0]
+        if n <= PER_LAYER_LOD:
+            lod_idx = np.arange(n)
+        else:
+            chosen = np.random.choice(n, size=PER_LAYER_LOD, replace=False)
+            lod_idx = np.sort(chosen)
+        self._layers[name] = LayerInfo(
+            points=pts, colors=colors, labels=labels,
+            tree_ids=tree_ids, lod_indices=lod_idx,
+        )
+        self._layer_mode = True
+
+    def set_layer_visible(self, name: str, visible: bool) -> None:
+        """Toggle a layer's visibility without reloading data."""
+        if name not in self._layers:
+            return
+        layer = self._layers[name]
+        layer.visible = visible
+        if layer.actor is not None:
+            layer.actor.SetVisibility(visible)
+            self._update_layer_point_count()
+            self._plotter.render()
+        else:
+            # Actor not yet created — do a full layer render
+            self._render_layers(preserve_camera=True)
+
+    def clear_layers(self) -> None:
+        """Remove all layers and exit layer mode."""
+        self._layers.clear()
+        self._layer_mode = False
+        self._plotter.clear()
+        self._point_count_label.setText("No data loaded")
+
+    def _render_layers(self, preserve_camera: bool = False) -> None:
+        """Render all visible layers as separate actors."""
+        saved_camera = None
+        if preserve_camera:
+            try:
+                saved_camera = self._plotter.camera_position
+            except Exception:
+                pass
+
+        self._plotter.clear()
+
+        for name, layer in self._layers.items():
+            if not layer.visible:
+                layer.actor = None
+                continue
+            idx = layer.lod_indices
+            pts = layer.points[idx]
+            cloud = pv.PolyData(pts)
+
+            scalars = self._get_layer_scalars(layer, idx)
+            kwargs = {
+                "point_size": 2,
+                "render_points_as_spheres": False,
+                "name": f"layer_{name}",
+            }
+
+            if scalars is not None and scalars.ndim == 2:
+                cloud["RGB"] = (scalars * 255).astype(np.uint8)
+                kwargs["scalars"] = "RGB"
+                kwargs["rgb"] = True
+            elif scalars is not None:
+                cloud["values"] = scalars
+                kwargs["scalars"] = "values"
+                if self._color_mode == ColorMode.COMPARISON:
+                    kwargs["cmap"] = "RdYlBu_r"
+                else:
+                    kwargs["cmap"] = "viridis"
+            else:
+                kwargs["color"] = "#4a9e7e"
+
+            layer.actor = self._plotter.add_mesh(cloud, **kwargs)
+
+        # Legend / annotation
+        if self._color_mode == ColorMode.CLASSIFICATION:
+            CLASS_NAMES = {0: "Noise", 1: "Terrain", 2: "Vegetation", 3: "CWD", 4: "Stem"}
+            all_unique = set()
+            for layer in self._layers.values():
+                if layer.visible and layer.labels is not None:
+                    all_unique.update(np.unique(layer.labels[layer.lod_indices].astype(int)).tolist())
+            legend_entries = []
+            for lbl in sorted(all_unique):
+                if lbl in CLASS_COLORS:
+                    legend_entries.append([CLASS_NAMES.get(lbl, f"Class {lbl}"), CLASS_COLORS[lbl]])
+            if legend_entries:
+                self._plotter.add_legend(
+                    legend_entries, bcolor=(0.1, 0.18, 0.15, 0.8),
+                    face="circle", size=(0.15, 0.2),
+                )
+        elif self._color_mode == ColorMode.TREE_ID:
+            self._plotter.add_text(
+                "Colored by Tree ID", position="upper_right",
+                font_size=10, color="#a8d8c0", shadow=True,
+            )
+
+        # Re-add plot circle if set
+        self._circle_actor = None
+        if self._plot_circle is not None:
+            self._circle_actor = self._plotter.add_mesh(
+                self._plot_circle, color=self.PLOT_CIRCLE_COLOR, line_width=3,
+            )
+
+        self._update_layer_point_count()
+
+        # EDL
+        if self._edl_btn.isChecked():
+            self._plotter.enable_eye_dome_lighting()
+        else:
+            self._release_edl()
+
+        if not preserve_camera:
+            self._plotter.reset_camera()
+        elif saved_camera is not None:
+            self._plotter.camera_position = saved_camera
+
+    def _get_layer_scalars(self, layer: LayerInfo, idx: np.ndarray) -> Optional[np.ndarray]:
+        """Get scalar values for a layer in the current color mode."""
+        if self._color_mode == ColorMode.RGB:
+            return layer.colors[idx] if layer.colors is not None else None
+        elif self._color_mode == ColorMode.HEIGHT:
+            return layer.points[idx, 2]
+        elif self._color_mode == ColorMode.CLASSIFICATION:
+            if layer.labels is not None:
+                lbl = layer.labels[idx].astype(int)
+                colors = np.zeros((len(lbl), 3), dtype=np.float64)
+                for class_id, color in CLASS_COLORS.items():
+                    mask = lbl == class_id
+                    if mask.any():
+                        colors[mask] = color
+                return colors
+            return None
+        elif self._color_mode == ColorMode.TREE_ID:
+            if layer.tree_ids is not None:
+                return layer.tree_ids[idx].astype(np.float32)
+            return None
+        return None
+
+    def _update_layer_point_count(self) -> None:
+        """Update point count label for layer mode."""
+        if not self._layers:
+            self._point_count_label.setText("No data loaded")
+            return
+        total = sum(l.points.shape[0] for l in self._layers.values())
+        visible = sum(l.points.shape[0] for l in self._layers.values() if l.visible)
+        n_vis = sum(1 for l in self._layers.values() if l.visible)
+        n_all = len(self._layers)
+        displayed = sum(len(l.lod_indices) for l in self._layers.values() if l.visible)
+        if visible < total or displayed < visible:
+            self._point_count_label.setText(
+                f"{visible:,} points visible ({n_vis}/{n_all} layers, {displayed:,} displayed)"
+            )
+        else:
+            self._point_count_label.setText(f"{total:,} points ({n_all} layers)")
 
     def export_screenshot(self, filepath: str, scale: int = 2) -> str:
         """Save a screenshot of the current view.
@@ -615,13 +827,17 @@ class PointCloudViewer(QWidget):
             self.cancel_measurement()
         self._focus_mode = checked
         if checked:
-            self._plotter.enable_surface_point_picking(
+            # Use point picker with left-click — finds the closest point
+            # to the click ray, prioritising front-most geometry.
+            self._plotter.enable_point_picking(
                 callback=self._on_point_picked_for_focus,
                 show_message=False,
                 show_point=True,
                 color="yellow",
                 point_size=12,
-                picker="cell",
+                tolerance=0.025,
+                use_picker=True,
+                left_clicking=True,
             )
         else:
             self._plotter.disable_picking()
@@ -899,7 +1115,10 @@ class PointCloudViewer(QWidget):
         self._measure_actors.clear()
         # Re-render to clean up all stray actors (measurement lines,
         # labels, and VTK picker point representations)
-        self._render(preserve_camera=True)
+        if self._layer_mode and self._layers:
+            self._render_layers(preserve_camera=True)
+        else:
+            self._render(preserve_camera=True)
 
     def _on_measure_pick(self, point: np.ndarray, *_args) -> None:
         """Handle a point pick during measurement."""

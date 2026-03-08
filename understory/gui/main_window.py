@@ -382,6 +382,7 @@ class MainWindow(QMainWindow):
         self._processing_panel.trim_cancel_requested.connect(self._on_trim_cancel)
         self._processing_panel.project_saved.connect(self._on_project_saved)
         self._processing_panel.load_output_layers.connect(self._on_load_output_layers)
+        self._processing_panel.layer_toggled.connect(self._on_layer_toggled)
         self._processing_panel.tree_selected.connect(self._on_tree_selected)
         splitter.addWidget(self._processing_panel)
 
@@ -539,8 +540,9 @@ class MainWindow(QMainWindow):
         project_paths = ProjectPaths(project_dir)
         project_paths.ensure_dirs()
 
-        # Save project.yaml inside the project folder
-        yaml_path = str(project_paths.config_file)
+        # Save <project_name>.yaml inside the project folder
+        safe_name = "".join(c if c.isalnum() or c in " _-." else "_" for c in project_name)
+        yaml_path = str(project_dir / f"{safe_name}.yaml")
         self._processing_panel.save_project(yaml_path)
         self._current_project_path = yaml_path
         self._update_title()
@@ -606,7 +608,7 @@ class MainWindow(QMainWindow):
 
     def _update_title(self) -> None:
         if self._current_project_path:
-            name = os.path.basename(self._current_project_path)
+            name = Path(self._current_project_path).stem  # strip .yaml extension
             self.setWindowTitle(f"Understory — {name}")
         else:
             self.setWindowTitle("Understory")
@@ -614,15 +616,22 @@ class MainWindow(QMainWindow):
     def _update_point_count(self) -> None:
         """Update the status bar point count label."""
         viewer = self._viewer
-        if viewer._points_full is None:
-            self._point_count_status.setText("")
-            return
-        total = viewer._points_full.shape[0]
-        displayed = len(viewer._lod_indices) if viewer._lod_indices is not None else total
-        if displayed < total:
-            self._point_count_status.setText(f"{displayed:,} / {total:,} points")
+        if viewer._layer_mode and viewer._layers:
+            total = sum(l.points.shape[0] for l in viewer._layers.values())
+            visible = sum(l.points.shape[0] for l in viewer._layers.values() if l.visible)
+            if visible < total:
+                self._point_count_status.setText(f"{visible:,} / {total:,} points")
+            else:
+                self._point_count_status.setText(f"{total:,} points")
+        elif viewer._points_full is not None:
+            total = viewer._points_full.shape[0]
+            displayed = len(viewer._lod_indices) if viewer._lod_indices is not None else total
+            if displayed < total:
+                self._point_count_status.setText(f"{displayed:,} / {total:,} points")
+            else:
+                self._point_count_status.setText(f"{total:,} points")
         else:
-            self._point_count_status.setText(f"{total:,} points")
+            self._point_count_status.setText("")
 
     # --- Slots ---
 
@@ -844,8 +853,12 @@ class MainWindow(QMainWindow):
         self._update_title()
 
     @Slot(list)
-    def _on_load_output_layers(self, paths: list) -> None:
-        """Load multiple output .las files and merge them into the viewer."""
+    def _on_load_output_layers(self, layers: list) -> None:
+        """Load all output .las layers into the viewer with per-layer toggling.
+
+        Args:
+            layers: list of (name, filepath, checked) tuples.
+        """
         self._viewer.clear()
         self._status_label.setText("Loading output layers...")
         QApplication.processEvents()
@@ -856,11 +869,8 @@ class MainWindow(QMainWindow):
                 sys.path.insert(0, scripts_dir)
             from tools import load_file
 
-            all_points = []
-            all_labels = []
-            all_colors = []
-            all_tree_ids = []
-            for filepath in paths:
+            n_loaded = 0
+            for name, filepath, checked in layers:
                 if not os.path.exists(filepath):
                     continue
                 pc, headers = load_file(
@@ -869,52 +879,48 @@ class MainWindow(QMainWindow):
                 )
                 if pc.shape[0] == 0:
                     continue
-                all_points.append(pc[:, :3])
+
+                points = pc[:, :3]
 
                 if headers and "label" in headers:
-                    all_labels.append(pc[:, headers.index("label")].astype(np.int32))
+                    labels = pc[:, headers.index("label")].astype(np.int32)
+                    # Auto-detect 0-indexed labels (0-3) -> (1-4)
+                    if 0 in labels and 4 not in labels:
+                        labels = labels + 1
                 else:
-                    all_labels.append(np.zeros(pc.shape[0], dtype=np.int32))
+                    labels = np.zeros(pc.shape[0], dtype=np.int32)
 
+                tree_ids = None
                 if headers and "tree_id" in headers:
-                    all_tree_ids.append(pc[:, headers.index("tree_id")].astype(np.int32))
-                else:
-                    all_tree_ids.append(np.full(pc.shape[0], -1, dtype=np.int32))
+                    tid = pc[:, headers.index("tree_id")].astype(np.int32)
+                    if np.any(tid >= 0):
+                        tree_ids = tid
 
+                colors = None
                 color_cols = []
                 for h in ("red", "green", "blue"):
                     if headers and h in headers:
                         color_cols.append(headers.index(h))
                 if len(color_cols) == 3:
-                    all_colors.append(pc[:, color_cols])
-                else:
-                    all_colors.append(None)
+                    colors = pc[:, color_cols]
 
-            if not all_points:
+                self._viewer.load_layer(
+                    name, points, colors=colors, labels=labels, tree_ids=tree_ids,
+                )
+                # Set initial visibility to match checkbox state
+                if not checked:
+                    self._viewer._layers[name].visible = False
+
+                n_loaded += 1
+                self._status_label.setText(f"Loading layers... ({n_loaded})")
+                QApplication.processEvents()
+
+            if n_loaded == 0:
                 self._status_label.setText("No points found in selected layers")
                 return
 
-            points = np.vstack(all_points)
-            labels = np.concatenate(all_labels)
-
-            # Auto-detect 0-indexed labels from inference (0-3) and convert
-            # to post-processing scheme (1-4) so CLASS_COLORS maps correctly.
-            if 0 in labels and 4 not in labels:
-                labels = labels + 1
-
-            # Merge tree IDs
-            tree_ids = np.concatenate(all_tree_ids)
-            has_tree_ids = np.any(tree_ids >= 0)
-
-            # Merge colors
-            colors = None
-            if all(c is not None for c in all_colors):
-                colors = np.vstack(all_colors)
-
-            self._viewer.load_points(
-                points, colors=colors, labels=labels,
-                tree_ids=tree_ids if has_tree_ids else None,
-            )
+            # Render all layers (camera resets to fit all visible data)
+            self._viewer._render_layers(preserve_camera=False)
 
             # Switch to classification color mode for layer viewing
             from understory.gui.viewer.point_cloud_viewer import ColorMode
@@ -922,38 +928,72 @@ class MainWindow(QMainWindow):
             if idx >= 0:
                 self._viewer._color_combo.setCurrentIndex(idx)
 
-            n_files = sum(1 for p in paths if os.path.exists(p))
+            total_pts = sum(l.points.shape[0] for l in self._viewer._layers.values())
             self._status_label.setText(
-                f"Loaded {n_files} layer(s): {points.shape[0]:,} points"
+                f"Loaded {n_loaded} layer(s): {total_pts:,} points"
             )
             self._update_point_count()
         except Exception as e:
             self._status_label.setText(f"Error loading layers: {e}")
 
+    @Slot(str, bool)
+    def _on_layer_toggled(self, name: str, visible: bool) -> None:
+        """Toggle a single layer's visibility (instant, no reload)."""
+        self._viewer.set_layer_visible(name, visible)
+        visible_pts = sum(
+            l.points.shape[0] for l in self._viewer._layers.values() if l.visible
+        )
+        total_pts = sum(l.points.shape[0] for l in self._viewer._layers.values())
+        n_vis = sum(1 for l in self._viewer._layers.values() if l.visible)
+        self._status_label.setText(f"{n_vis} layer(s) visible: {visible_pts:,} / {total_pts:,} points")
+        self._update_point_count()
+
     @Slot(int)
     def _on_tree_selected(self, tree_id: int) -> None:
         """Highlight a specific tree in the viewer when selected in the results table."""
-        if self._viewer._tree_ids is None:
+        from understory.gui.viewer.point_cloud_viewer import ColorMode
+
+        if self._viewer._layer_mode and self._viewer._layers:
+            # Layer mode — search across all layers for the tree
+            idx = self._viewer._color_combo.findData(ColorMode.TREE_ID)
+            if idx >= 0:
+                self._viewer._color_combo.setCurrentIndex(idx)
+
+            for layer in self._viewer._layers.values():
+                if layer.tree_ids is not None:
+                    mask = layer.tree_ids == tree_id
+                    if np.any(mask):
+                        tree_pts = layer.points[mask]
+                        center = tree_pts.mean(axis=0)
+                        self._viewer._plotter.set_focus(center)
+                        self._status_label.setText(
+                            f"Tree {tree_id}: {mask.sum():,} points at "
+                            f"({center[0]:.1f}, {center[1]:.1f})"
+                        )
+                        return
             self._status_label.setText(
                 "Tree highlighting requires sorted layers (Stem/Veg Points Sorted)"
             )
-            return
+        else:
+            # Single-cloud mode
+            if self._viewer._tree_ids is None:
+                self._status_label.setText(
+                    "Tree highlighting requires sorted layers (Stem/Veg Points Sorted)"
+                )
+                return
 
-        # Switch to Tree ID color mode so the selected tree is visible
-        from understory.gui.viewer.point_cloud_viewer import ColorMode
-        idx = self._viewer._color_combo.findData(ColorMode.TREE_ID)
-        if idx >= 0:
-            self._viewer._color_combo.setCurrentIndex(idx)
+            idx = self._viewer._color_combo.findData(ColorMode.TREE_ID)
+            if idx >= 0:
+                self._viewer._color_combo.setCurrentIndex(idx)
 
-        # Find the tree's points and focus the camera on them
-        mask = self._viewer._tree_ids == tree_id
-        if np.any(mask):
-            tree_pts = self._viewer._points_full[mask]
-            center = tree_pts.mean(axis=0)
-            self._viewer._plotter.set_focus(center)
-            self._status_label.setText(
-                f"Tree {tree_id}: {mask.sum():,} points at ({center[0]:.1f}, {center[1]:.1f})"
-            )
+            mask = self._viewer._tree_ids == tree_id
+            if np.any(mask):
+                tree_pts = self._viewer._points_full[mask]
+                center = tree_pts.mean(axis=0)
+                self._viewer._plotter.set_focus(center)
+                self._status_label.setText(
+                    f"Tree {tree_id}: {mask.sum():,} points at ({center[0]:.1f}, {center[1]:.1f})"
+                )
 
     @Slot()
     def _on_pipeline_started(self) -> None:
@@ -1040,7 +1080,7 @@ class MainWindow(QMainWindow):
             self._recent_menu.addAction(action)
             return
         for path in recent:
-            action = QAction(os.path.basename(path), self)
+            action = QAction(Path(path).stem, self)  # show name without .yaml
             action.setToolTip(path)
             action.setData(path)
             action.triggered.connect(lambda checked=False, p=path: self._open_recent(p))

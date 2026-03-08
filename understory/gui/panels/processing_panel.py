@@ -15,6 +15,7 @@ from typing import Optional
 
 from PySide6.QtCore import Qt, QThread, Signal, Slot
 from PySide6.QtWidgets import (
+    QApplication,
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
@@ -168,7 +169,8 @@ class ProcessingPanel(QWidget):
     pipeline_finished = Signal(str)  # output_dir
     pipeline_error = Signal()  # emitted when pipeline errors out
     project_saved = Signal(str)  # filepath where project was saved
-    load_output_layers = Signal(list)  # list of .las file paths
+    load_output_layers = Signal(list)  # list of (name, path, checked) tuples
+    layer_toggled = Signal(str, bool)  # (layer_name, visible)
     tree_selected = Signal(int)  # tree ID selected in the results table
     plot_centre_changed = Signal(object)  # (x, y) tuple or None for auto
     swap_axes_requested = Signal(str)  # mode: yz, xz, xy, rot90z, reset
@@ -937,7 +939,10 @@ class ProcessingPanel(QWidget):
         # --- Output Layers ---
         group = QGroupBox("Output Layers")
         glayout = QVBoxLayout(group)
-        info = QLabel("Select output layers to load into the viewer.")
+        info = QLabel(
+            "Click Load Layers to load all layers into memory, "
+            "then toggle visibility with checkboxes."
+        )
         info.setWordWrap(True)
         glayout.addWidget(info)
 
@@ -1032,14 +1037,48 @@ class ProcessingPanel(QWidget):
                 "Please select a pipeline run from the Run History dropdown first."
             )
             return
-        paths = []
+        # Collect ALL available layers (not just checked) with their checked state
+        layers: list[tuple[str, str, bool]] = []
         for cb, filename in self._layer_checkboxes:
-            if cb.isChecked() and cb.isEnabled():
-                paths.append(os.path.join(self._results_output_dir, filename))
-        if paths:
-            self.load_output_layers.emit(paths)
-        else:
-            QMessageBox.information(self, "No Layers", "Please select at least one output layer.")
+            if cb.isEnabled():  # file exists on disk
+                path = os.path.join(self._results_output_dir, filename)
+                layers.append((cb.text(), path, cb.isChecked()))
+        if not layers:
+            QMessageBox.information(self, "No Layers", "No output layers found.")
+            return
+        # Show loading state
+        self._load_layers_btn.setEnabled(False)
+        self._load_layers_btn.setText("Loading...")
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        QApplication.processEvents()
+        try:
+            self.load_output_layers.emit(layers)
+        finally:
+            QApplication.restoreOverrideCursor()
+            self._load_layers_btn.setEnabled(True)
+            self._load_layers_btn.setText("Load Layers")
+        # Connect checkboxes for live visibility toggling
+        self._connect_layer_toggles()
+
+    def _connect_layer_toggles(self) -> None:
+        """Connect checkbox toggled signals for live visibility toggling."""
+        self._disconnect_layer_toggles()
+        for cb, _filename in self._layer_checkboxes:
+            if cb.isEnabled():
+                cb.toggled.connect(
+                    lambda checked, name=cb.text(): self.layer_toggled.emit(name, checked)
+                )
+
+    def _disconnect_layer_toggles(self) -> None:
+        """Disconnect layer toggle signals from all checkboxes."""
+        import warnings
+        for cb, _filename in self._layer_checkboxes:
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    cb.toggled.disconnect()
+            except (RuntimeError, TypeError):
+                pass
 
     def _export_tree_data(self) -> None:
         if self._tree_table_model._df is None:
@@ -1219,6 +1258,9 @@ class ProcessingPanel(QWidget):
     def _populate_results(self, output_dir: str) -> None:
         """Enable results tab controls based on available output files."""
         self._results_output_dir = output_dir
+
+        # Disconnect previous toggle connections (layers from prior run)
+        self._disconnect_layer_toggles()
 
         # Enable layer checkboxes for existing files
         any_layer = False

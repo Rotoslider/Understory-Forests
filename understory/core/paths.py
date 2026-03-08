@@ -40,6 +40,16 @@ class ProjectPaths:
 
     @property
     def config_file(self) -> Path:
+        """Find the project config YAML in the root directory.
+
+        Searches for an existing .yaml/.yml file first (handles named configs
+        like ``MyForest.yaml``).  Falls back to ``project.yaml`` for new or
+        legacy projects.
+        """
+        if self._root.exists():
+            for f in sorted(self._root.iterdir()):
+                if f.suffix in ('.yaml', '.yml') and f.is_file():
+                    return f
         return self._root / "project.yaml"
 
     @property

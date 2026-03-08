@@ -108,10 +108,14 @@ class LabelEditor(QWidget):
 
         self._focus_btn = QPushButton("Set Focus (F)")
         self._focus_btn.setToolTip(
-            "Right-click a point to set the camera orbit centre.\n"
+            "Left-click a point to set the camera orbit centre.\n"
             "Rotation will pivot around the picked point."
         )
         self._focus_btn.setCheckable(True)
+        self._focus_btn.setStyleSheet(
+            "QPushButton:checked { background-color: #4a9e7e; color: white; "
+            "border: 2px solid #2d7a5e; font-weight: bold; }"
+        )
         self._focus_btn.toggled.connect(self._on_focus_toggled)
         nav_layout.addWidget(self._focus_btn)
 
@@ -343,11 +347,13 @@ class LabelEditor(QWidget):
             if self._points is not None and self._kdtree is None:
                 from scipy.spatial import cKDTree
                 self._kdtree = cKDTree(self._points)
-            self._plotter.enable_surface_point_picking(
+            self._plotter.enable_point_picking(
                 callback=self._on_brush_pick,
                 show_message=False,
                 show_point=False,
-                picker="cell",
+                tolerance=0.025,
+                use_picker=True,
+                left_clicking=True,
             )
         else:
             self._brush_btn.setText("Enable Brush (B)")
@@ -381,13 +387,15 @@ class LabelEditor(QWidget):
                 self._select_btn.setChecked(False)
             if self._brush_mode:
                 self._brush_btn.setChecked(False)
-            self._plotter.enable_surface_point_picking(
+            self._plotter.enable_point_picking(
                 callback=self._on_point_picked_for_focus,
                 show_message=False,
                 show_point=True,
                 color="yellow",
                 point_size=12,
-                picker="cell",
+                tolerance=0.025,
+                use_picker=True,
+                left_clicking=True,
             )
         else:
             self._plotter.disable_picking()
