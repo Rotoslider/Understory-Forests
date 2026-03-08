@@ -6,6 +6,8 @@ Understory Forests is a desktop application for extracting plot-scale forest mea
 
 Built on top of the FSCT pipeline by Sean Krisanski, Understory provides a full GUI workflow: load a point cloud, prepare it, run semantic segmentation and measurement, then explore results in an interactive 3D viewer with branded reports and PDF export.
 
+![Main window with classified point cloud](images/Project%20side%20bar%20and%20main%20screen.png)
+
 ---
 
 ## Features
@@ -23,6 +25,8 @@ Built on top of the FSCT pipeline by Sean Krisanski, Understory provides a full 
 - Cross-section slicing — horizontal or vertical slice through the point cloud for inspecting internal structure
 - Measurement tools — click two points to measure 3D distance or vertical height difference
 - Point cloud comparison — load a second cloud and visualize nearest-neighbor distances with a diverging colormap
+
+![Results with height gradient coloring and tree ID view](images/Screenshot%20from%202026-02-17%2018-24-28.png)
 
 ### Point Cloud Preparation
 
@@ -45,6 +49,15 @@ Runs all FSCT stages with real-time progress tracking and error translation:
 
 Each stage can be enabled/disabled independently. The pipeline runs in a background thread so the GUI stays responsive.
 
+<details>
+<summary>Process and Advanced settings panels</summary>
+
+| Process Tab | Advanced Tab |
+|:-----------:|:------------:|
+| ![Process sidebar](images/Process%20sidebar.png) | ![Advanced sidebar](images/Advanced%20sidebar.png) |
+
+</details>
+
 The pipeline supports **cooperative cancellation** — clicking Stop signals a safe shutdown at the next stage boundary rather than hard-killing the worker thread. A **dual progress bar** shows both overall pipeline progress and current stage progress, with sub-stage tracking during semantic segmentation.
 
 ### Tree-Aware Plot Cropping
@@ -57,7 +70,7 @@ The status bar shows real-time GPU utilization and memory usage during pipeline 
 
 ### Project Management
 
-- **YAML-based project files** — All settings saved in a single `project.yaml` with sensible defaults
+- **YAML-based project files** — All settings saved in a `<ProjectName>.yaml` file with sensible defaults
 - **Timestamped run folders** — Each pipeline run creates a `runs/run_YYYY-MM-DD_HH-MM-SS/` folder preserving its output, report, and config snapshot
 - **Prepared cloud tracking** — Projects remember whether a prepared (subsampled/cropped) cloud should be used for processing
 - **Recent projects** — File > Recent Projects shows up to 10 recently opened files/projects
@@ -139,6 +152,16 @@ The Results tab provides checkboxes for 19 output point cloud layers. Select any
 
 Clicking a tree row in the measurements table highlights that tree in the viewer and focuses the camera on it.
 
+![Results tab with classification view and plot circle](images/Results%20Plot%20circle.png)
+
+![Results sidebar with layer checkboxes and tree measurements](images/Result%20sidebar.png)
+
+| Sorted stems with Tree ID coloring | Top-down slice view |
+|:-----------------------------------:|:-------------------:|
+| ![Sorted stems](images/Results%20sorted%20Stems.png) | ![Slice tool top view](images/Slice%20tool%20top%20view.png) |
+
+![Cross-section slice with measurement tool](images/Slice%20tool%20with%20measure.png)
+
 ### Tree Data Export
 
 Tree measurement data can be exported as CSV from the Results tab. The save dialog defaults to the run's reports folder for organized output.
@@ -159,9 +182,13 @@ Compare tree measurements from two scans of the same plot with **`scripts/align_
 
 Track tree growth over time with **Tools > Growth Dashboard**. Select trees from the registry to see DBH and height plotted across multiple scans. Export growth data as CSV for external analysis.
 
+![Growth Tracking Dashboard with DBH and height charts](images/Growth%20Tracking%20page.png)
+
 ### Allometric Equations
 
 Apply biomass and carbon equations to your tree data with **Tools > Allometric Equations**. Understory includes default generic AGB and carbon equations and lets you define custom formulas using any column from tree_data.csv. Equations are evaluated against all trees with results displayed in a table and exportable as CSV.
+
+![Allometric Equations editor with formula preview](images/Allometric%20Equations%20page.png)
 
 ### GIS Export
 
@@ -186,6 +213,10 @@ Key training features:
 - **Confidence-guided correction** — The Label Editor shows model confidence per point, letting you focus editing time on the points the model is least sure about
 - **Fine-tuning support** — Load existing model weights and fine-tune on new site-specific data instead of training from scratch
 
+| Training Workflow | Training Loss Chart |
+|:-----------------:|:-------------------:|
+| ![Training workflow](images/Training%20workflow%20window.png) | ![Training loss](images/training_loss.png) |
+
 ### Label Editor
 
 A full-featured point cloud label editor for correcting semantic segmentation labels and preparing training data:
@@ -201,6 +232,8 @@ A full-featured point cloud label editor for correcting semantic segmentation la
 - **Select Low Confidence** — One-click selection of all points below a confidence threshold for batch correction
 - **Save Labels** — Export corrected labels as .las files for training
 - **Auto label detection** — Automatically detects 0-indexed vs 1-indexed labels and adjusts accordingly
+
+![Label Editor with classified point cloud](images/Label%20Editor%20window.png)
 
 ### Per-Run Settings Persistence
 
