@@ -151,6 +151,10 @@ Process multiple point clouds in one go. Open **Tools > Batch Processing**, add 
 
 Compare results from two pipeline runs with **Tools > Compare Runs**. The comparison report shows per-tree deltas for DBH, height, and volume, identifies newly detected or missing trees, and generates a standalone HTML report with change tables and delta histograms.
 
+### Scan Alignment
+
+Compare tree measurements from two scans of the same plot with **`scripts/align_scans.py`**. Automatically finds the rotation and translation between two sets of tree positions — even when the scans are in completely different coordinate systems (common with SLAM-based scanners). Generates an overlay stem map and a matched-tree CSV with DBH and height comparisons. See the **[Scan Alignment Guide](SCAN_ALIGNMENT_GUIDE.md)** for details.
+
 ### Growth Dashboard
 
 Track tree growth over time with **Tools > Growth Dashboard**. Select trees from the registry to see DBH and height plotted across multiple scans. Export growth data as CSV for external analysis.
@@ -262,11 +266,13 @@ The script checks prerequisites, creates a virtual environment, installs PyTorch
 cd Understory_Forests
 
 # Create and activate virtual environment
+sudo apt install python3.12-venv
 python3 -m venv venv
 source venv/bin/activate
 
 # Upgrade pip
 pip install --upgrade pip
+sudo apt-get install -y build-essential python3-dev
 
 # Install PyTorch with CUDA 12.8
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
@@ -411,6 +417,7 @@ Understory_Forests/
 │   ├── post_segmentation_script.py  # DTM + point cleaning
 │   ├── measure.py           # Tree measurements + cylinder fitting
 │   ├── model.py             # PointNet++ architecture (4 classes)
+│   ├── align_scans.py       # Cross-scan tree alignment and comparison
 │   └── tools.py             # File I/O, clustering, utilities
 ├── model/                   # Trained model weights (model.pth)
 ├── tests/                   # Test suite (76 tests)
