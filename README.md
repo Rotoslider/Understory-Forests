@@ -198,6 +198,10 @@ Export tree locations and attributes for use in GIS software. The **Export to GI
 
 Create camera flythrough animations with **View > Flythrough Editor**. Capture keyframe positions from the current 3D view, then render a smooth camera path using cubic spline interpolation. Export as an image sequence, GIF, or MP4 (MP4 requires imageio-ffmpeg).
 
+![Flythrough Editor window](images/Flythrough_window.png)
+
+[![Flythrough Demo Video](https://img.youtube.com/vi/sI68TmYgAd4/0.jpg)](https://youtu.be/sI68TmYgAd4)
+
 ### Training Workflow
 
 A dedicated Training panel provides a guided 5-step workflow for retraining the PointNet++ model on your own data:
